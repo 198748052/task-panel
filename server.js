@@ -15,6 +15,7 @@ const store = require('./src/store');
 const { UPLOAD_DIR } = require('./src/db');
 const objectStore = require('./src/storage');
 const auth = require('./src/auth');
+const updater = require('./src/updater');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -144,6 +145,28 @@ app.post('/api/settings/test', requireAuth, async (req, res) => {
       error: 'r2_test_failed',
       message: err.message || '连接测试失败',
     });
+  }
+});
+
+/* ------------------------------- system ------------------------------ */
+
+app.get('/api/system', requireAuth, (req, res) => {
+  res.json({
+    version: updater.getVersion(),
+    branch: updater.getBranch(),
+    git: updater.isGitRepo(),
+    update: updater.getStatus(),
+  });
+});
+
+app.post('/api/system/update', requireAuth, (req, res) => {
+  try {
+    updater.startUpdate();
+    res.status(202).json({ ok: true, message: '已开始更新' });
+  } catch (err) {
+    res
+      .status(409)
+      .json({ error: err.code || 'update_failed', message: err.message });
   }
 });
 

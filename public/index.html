@@ -49,6 +49,7 @@
           </label>
           <button id="new-task-btn" class="btn btn-primary">+ 新建任务</button>
           <button id="trash-btn" class="btn btn-ghost">回收站</button>
+          <button id="update-btn" class="btn btn-ghost">更新</button>
           <button id="settings-btn" class="btn btn-ghost">设置</button>
           <button id="logout-btn" class="btn btn-ghost hidden">退出</button>
         </div>
@@ -232,6 +233,24 @@
         <div class="modal-actions">
           <button id="settings-test" class="btn btn-ghost">测试连接</button>
           <button id="settings-save" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 系统更新 -->
+    <div id="update-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <div class="trash-head">
+          <h3>系统更新</h3>
+          <button id="update-close" class="icon-btn" title="关闭">✕</button>
+        </div>
+        <p class="settings-hint">
+          从 Git 拉取最新代码、安装依赖并重启服务。更新期间页面可能短暂断开，完成后会自动刷新。
+        </p>
+        <p id="update-step" class="update-step">准备中…</p>
+        <pre id="update-log" class="update-log"></pre>
+        <div class="modal-actions">
+          <button id="update-done" class="btn btn-primary" disabled>完成</button>
         </div>
       </div>
     </div>

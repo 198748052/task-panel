@@ -74,6 +74,12 @@ const el = {
   trashEmpty: $('#trash-empty'),
   trashDone: $('#trash-done'),
   trashRetention: $('#trash-retention'),
+  updateBtn: $('#update-btn'),
+  updateModal: $('#update-modal'),
+  updateClose: $('#update-close'),
+  updateStep: $('#update-step'),
+  updateLog: $('#update-log'),
+  updateDone: $('#update-done'),
   previewModal: $('#preview-modal'),
   previewTitle: $('#preview-title'),
   previewDownload: $('#preview-download'),
@@ -719,6 +725,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!el.previewModal.classList.contains('hidden')) closePreview();
   else if (!el.settingsModal.classList.contains('hidden')) closeSettings();
+  else if (!el.updateModal.classList.contains('hidden')) closeUpdate();
   else if (!el.trashModal.classList.contains('hidden')) closeTrash();
   else if (!el.taskModal.classList.contains('hidden')) closeTaskModal();
   else if (!el.drawer.classList.contains('hidden')) closeDrawer();
@@ -1206,6 +1213,109 @@ el.settingsModal.addEventListener('click', (e) => {
 });
 el.settingsSave.addEventListener('click', saveSettings);
 el.settingsTest.addEventListener('click', testSettings);
+
+/* ------------------------------- update ------------------------------- */
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let updatePollToken = 0;
+
+function closeUpdate() {
+  updatePollToken += 1;
+  el.updateModal.classList.add('hidden');
+}
+
+async function startUpdate() {
+  let info;
+  try {
+    info = await api('GET', '/api/system');
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  if (!info.git) {
+    toast('部署目录不是 Git 仓库，无法自动更新');
+    return;
+  }
+  if (info.update && info.update.status === 'running') {
+    toast('已有更新任务正在进行');
+    return;
+  }
+  if (
+    !confirm('将从 Git 拉取最新代码并重启服务，期间页面会短暂断开。确定继续吗？')
+  ) {
+    return;
+  }
+
+  const token = (updatePollToken += 1);
+  el.updateStep.textContent = '正在请求更新…';
+  el.updateLog.textContent = '';
+  el.updateDone.disabled = true;
+  el.updateDone.textContent = '完成';
+  el.updateModal.classList.remove('hidden');
+
+  try {
+    await api('POST', '/api/system/update');
+  } catch (err) {
+    if (token === updatePollToken) {
+      el.updateStep.textContent = err.message || '更新请求失败';
+      el.updateDone.disabled = false;
+    }
+    return;
+  }
+  pollUpdate(token);
+}
+
+async function pollUpdate(token) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (token === updatePollToken && Date.now() < deadline) {
+    await sleep(2000);
+    if (token !== updatePollToken) return;
+
+    let data;
+    try {
+      data = await api('GET', '/api/system');
+    } catch (err) {
+      if (err.message === 'unauthorized') return;
+      el.updateStep.textContent = '服务正在重启，等待重新连接…';
+      continue;
+    }
+
+    const u = data.update || {};
+    if (u.message) el.updateStep.textContent = u.message;
+    if (u.logTail) el.updateLog.textContent = u.logTail;
+
+    if (u.status === 'done') {
+      el.updateStep.textContent = `更新完成（${u.fromVersion || '?'} → ${
+        u.toVersion || '?'
+      }）`;
+      el.updateDone.disabled = false;
+      el.updateDone.textContent = '刷新页面';
+      toast('更新完成，正在刷新…');
+      await sleep(1200);
+      if (token === updatePollToken) location.reload();
+      return;
+    }
+    if (u.status === 'failed') {
+      el.updateStep.textContent = `更新失败：${u.error || u.message || '未知错误'}`;
+      el.updateDone.disabled = false;
+      return;
+    }
+  }
+  if (token === updatePollToken) {
+    el.updateStep.textContent = '更新状态未知，请手动刷新页面查看。';
+    el.updateDone.disabled = false;
+  }
+}
+
+el.updateBtn.addEventListener('click', startUpdate);
+el.updateClose.addEventListener('click', closeUpdate);
+el.updateDone.addEventListener('click', () => {
+  if (el.updateDone.textContent === '刷新页面') location.reload();
+  else closeUpdate();
+});
+el.updateModal.addEventListener('click', (e) => {
+  if (e.target === el.updateModal) closeUpdate();
+});
 
 /* ----------------------------- drag & drop ---------------------------- */
 

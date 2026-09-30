@@ -1170,6 +1170,29 @@ main {
   }
 }
 
+/* ------------------------------- update ------------------------------ */
+
+.update-step {
+  margin: 12px 0 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.update-log {
+  margin: 0;
+  padding: 12px;
+  background: #0f172a;
+  color: #cbd5e1;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 /* -------------------------------- toast ------------------------------ */
 
 .toast {
