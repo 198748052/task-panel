@@ -155,8 +155,31 @@ app.get('/api/system', requireAuth, (req, res) => {
     version: updater.getVersion(),
     branch: updater.getBranch(),
     git: updater.isGitRepo(),
+    remote: updater.getRemoteConfig(),
     update: updater.getStatus(),
   });
+});
+
+app.put('/api/system/remote', requireAuth, (req, res) => {
+  try {
+    const remote = updater.setRemote(req.body || {});
+    res.json({ ok: true, remote });
+  } catch (err) {
+    res
+      .status(400)
+      .json({ error: err.code || 'remote_failed', message: err.message });
+  }
+});
+
+app.post('/api/system/remote/test', requireAuth, async (req, res) => {
+  try {
+    const result = await updater.testRemote();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res
+      .status(400)
+      .json({ ok: false, error: err.code || 'remote_test_failed', message: err.message });
+  }
 });
 
 app.post('/api/system/update', requireAuth, (req, res) => {

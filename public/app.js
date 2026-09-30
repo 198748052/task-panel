@@ -101,6 +101,12 @@ const el = {
   r2Region: $('#r2-region'),
   r2Prefix: $('#r2-prefix'),
   r2ForcePathStyle: $('#r2-forcePathStyle'),
+  remoteUrl: $('#remote-url'),
+  remoteBranch: $('#remote-branch'),
+  remoteStatus: $('#remote-status'),
+  remoteMessage: $('#remote-message'),
+  remoteTest: $('#remote-test'),
+  remoteSave: $('#remote-save'),
   toast: $('#toast'),
 };
 
@@ -1164,12 +1170,70 @@ function readSettingsForm() {
 
 async function openSettings() {
   try {
-    const data = await api('GET', '/api/settings');
+    const [data, system] = await Promise.all([
+      api('GET', '/api/settings'),
+      api('GET', '/api/system'),
+    ]);
     fillSettingsForm(data.r2.values, data.r2.enabled, data.r2.hasSecret);
+    fillRemoteForm(system);
     el.settingsMessage.classList.add('hidden');
+    el.remoteMessage.classList.add('hidden');
     el.settingsModal.classList.remove('hidden');
   } catch (err) {
     toast(err.message);
+  }
+}
+
+function fillRemoteForm(system) {
+  const remote = (system && system.remote) || {};
+  el.remoteUrl.value = remote.url || '';
+  el.remoteBranch.value = remote.branch || 'main';
+  if (system && !system.git) {
+    el.remoteStatus.textContent = '非 Git 仓库';
+    el.remoteStatus.classList.remove('on');
+    return;
+  }
+  el.remoteStatus.textContent = remote.url ? '已配置' : '未配置';
+  el.remoteStatus.classList.toggle('on', !!remote.url);
+}
+
+function showRemoteMessage(kind, text) {
+  el.remoteMessage.textContent = text;
+  el.remoteMessage.className = `settings-message ${kind}`;
+  el.remoteMessage.classList.remove('hidden');
+}
+
+async function saveRemote() {
+  el.remoteSave.disabled = true;
+  try {
+    const res = await api('PUT', '/api/system/remote', {
+      url: el.remoteUrl.value.trim(),
+      branch: el.remoteBranch.value.trim(),
+    });
+    el.remoteUrl.value = res.remote.url || '';
+    el.remoteBranch.value = res.remote.branch || 'main';
+    el.remoteStatus.textContent = res.remote.url ? '已配置' : '未配置';
+    el.remoteStatus.classList.toggle('on', !!res.remote.url);
+    showRemoteMessage('ok', '仓库配置已保存');
+    toast('仓库配置已保存');
+  } catch (err) {
+    showRemoteMessage('err', err.message);
+  } finally {
+    el.remoteSave.disabled = false;
+  }
+}
+
+async function testRemote() {
+  el.remoteTest.disabled = true;
+  showRemoteMessage('info', '正在测试连接…');
+  try {
+    const res = await api('POST', '/api/system/remote/test');
+    const detail = res.commit ? ` · ${res.commit}` : '';
+    showRemoteMessage('ok', `连接成功（${res.branch}${detail}）`);
+  } catch (err) {
+    showRemoteMessage('err', err.message);
+  } finally {
+    el.remoteTest.disabled = false;
   }
 }
 
@@ -1213,6 +1277,8 @@ el.settingsModal.addEventListener('click', (e) => {
 });
 el.settingsSave.addEventListener('click', saveSettings);
 el.settingsTest.addEventListener('click', testSettings);
+el.remoteSave.addEventListener('click', saveRemote);
+el.remoteTest.addEventListener('click', testRemote);
 
 /* ------------------------------- update ------------------------------- */
 

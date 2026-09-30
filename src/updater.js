@@ -5,12 +5,16 @@ const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
 
 const { DATA_DIR } = require('./db');
+const settings = require('./settings');
 
 const APP_DIR = path.join(__dirname, '..');
 const LOG_FILE = path.join(DATA_DIR, 'update.log');
 const STATUS_FILE = path.join(DATA_DIR, 'update-status.json');
-const BRANCH = process.env.DEPLOY_BRANCH || 'main';
 const MAX_LOG_BYTES = 20000;
+
+const DEFAULT_BRANCH = process.env.DEPLOY_BRANCH || 'main';
+const BRANCH_KEY = 'deploy_branch';
+const REMOTE_URL_KEY = 'deploy_remote_url';
 
 let inProgress = false;
 
@@ -44,6 +48,106 @@ function getBranch() {
   } catch {
     return '';
   }
+}
+
+/* --------------------------- remote config ---------------------------- */
+
+function getDeployBranch() {
+  const value = settings.get(BRANCH_KEY, DEFAULT_BRANCH);
+  return value || DEFAULT_BRANCH;
+}
+
+function remoteUrlFromGit() {
+  if (!isGitRepo()) return '';
+  try {
+    return git(['remote', 'get-url', 'origin']);
+  } catch {
+    return '';
+  }
+}
+
+function getRemoteConfig() {
+  return {
+    url: remoteUrlFromGit() || settings.get(REMOTE_URL_KEY, ''),
+    branch: getDeployBranch(),
+  };
+}
+
+function setRemote({ url, branch }) {
+  if (!isGitRepo()) {
+    const err = new Error('部署目录不是 Git 仓库，请先执行 git init');
+    err.code = 'no_git';
+    throw err;
+  }
+  const cleanUrl = String(url || '').trim();
+  const cleanBranch = String(branch || '').trim() || DEFAULT_BRANCH;
+
+  if (cleanUrl) {
+    let hasRemote = true;
+    try {
+      git(['remote', 'get-url', 'origin']);
+    } catch {
+      hasRemote = false;
+    }
+    if (hasRemote) {
+      git(['remote', 'set-url', 'origin', cleanUrl]);
+    } else {
+      git(['remote', 'add', 'origin', cleanUrl]);
+    }
+    settings.set(REMOTE_URL_KEY, cleanUrl);
+  }
+  settings.set(BRANCH_KEY, cleanBranch);
+  return getRemoteConfig();
+}
+
+function execGit(args, timeoutMs = 60000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { cwd: APP_DIR, env: process.env });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('连接超时，请检查服务器能否访问该仓库地址'));
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(stderr.trim() || `git ${args.join(' ')} 退出码 ${code}`));
+    });
+  });
+}
+
+async function testRemote() {
+  if (!isGitRepo()) {
+    const err = new Error('部署目录不是 Git 仓库，请先执行 git init');
+    err.code = 'no_git';
+    throw err;
+  }
+  const url = remoteUrlFromGit();
+  if (!url) {
+    const err = new Error('尚未配置仓库地址');
+    err.code = 'no_remote';
+    throw err;
+  }
+  const branch = getDeployBranch();
+  const out = await execGit(['ls-remote', '--heads', 'origin', branch]);
+  const match = out.match(/^([0-9a-f]{7,40})\s/m);
+  return {
+    url,
+    branch,
+    commit: match ? match[1].slice(0, 7) : null,
+    message: '连接成功',
+  };
 }
 
 /* -------------------------- status & logging -------------------------- */
@@ -189,8 +293,9 @@ async function restartService() {
 
 async function runUpdate(fromVersion) {
   try {
-    await runStep('git', ['fetch', '--prune', 'origin', BRANCH]);
-    await runStep('git', ['reset', '--hard', `origin/${BRANCH}`]);
+    const branch = getDeployBranch();
+    await runStep('git', ['fetch', '--prune', 'origin', branch]);
+    await runStep('git', ['reset', '--hard', `origin/${branch}`]);
     const toVersion = getVersion();
 
     writeStatus({ step: 'installing', message: '正在安装依赖…', toVersion });
@@ -264,7 +369,7 @@ function startUpdate() {
     startedAt: new Date().toISOString(),
     finishedAt: null,
   });
-  appendLog(`开始更新，当前版本 ${fromVersion || '未知'}，分支 ${BRANCH}`);
+  appendLog(`开始更新，当前版本 ${fromVersion || '未知'}，分支 ${getDeployBranch()}`);
 
   runUpdate(fromVersion);
 }
@@ -273,6 +378,9 @@ module.exports = {
   isGitRepo,
   getVersion,
   getBranch,
+  getRemoteConfig,
+  setRemote,
+  testRemote,
   getStatus,
   startUpdate,
 };

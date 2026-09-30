@@ -1164,6 +1164,19 @@ main {
   color: var(--text-soft);
 }
 
+.settings-section + .settings-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 @media (max-width: 600px) {
   .settings-grid {
     grid-template-columns: 1fr;

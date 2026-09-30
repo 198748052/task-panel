@@ -168,6 +168,35 @@
         <div class="settings-body">
           <section class="settings-section">
             <div class="settings-section-head">
+              <h4>远程仓库（一键更新）</h4>
+              <span id="remote-status" class="settings-status">未配置</span>
+            </div>
+            <p class="settings-hint">
+              填写代码仓库地址后，点击顶部「更新」按钮即可从该仓库拉取最新代码。服务器需能访问该地址。
+            </p>
+            <div class="settings-grid">
+              <label class="settings-field settings-field-wide">
+                <span>仓库地址（Git Remote URL）</span>
+                <input
+                  id="remote-url"
+                  class="input"
+                  placeholder="https://github.com/用户名/仓库.git"
+                />
+              </label>
+              <label class="settings-field">
+                <span>分支</span>
+                <input id="remote-branch" class="input" placeholder="main" />
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button id="remote-test" class="btn btn-small btn-ghost">测试连接</button>
+              <button id="remote-save" class="btn btn-small btn-primary">保存仓库配置</button>
+            </div>
+            <p id="remote-message" class="settings-message hidden"></p>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-section-head">
               <h4>Cloudflare R2 附件存储</h4>
               <span id="r2-status" class="settings-status">未配置</span>
             </div>
