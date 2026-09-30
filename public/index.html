@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>任务面板</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%232563eb'/%3E%3Cpath d='M28 52l14 14 30-32' stroke='white' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <!-- 登录页 -->
+    <div id="login-view" class="login-view hidden">
+      <form id="login-form" class="login-card">
+        <div class="login-logo">任务面板</div>
+        <p class="login-tip">请输入访问口令</p>
+        <input
+          id="login-password"
+          type="password"
+          placeholder="访问口令"
+          autocomplete="current-password"
+          required
+        />
+        <button type="submit" class="btn btn-primary btn-block">进入</button>
+        <p id="login-error" class="login-error hidden"></p>
+      </form>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="app-view" class="hidden">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-logo">任务面板</span>
+          <span id="board-summary" class="brand-summary"></span>
+        </div>
+        <div class="topbar-actions">
+          <input
+            id="search-input"
+            class="search-input"
+            type="search"
+            placeholder="搜索任务或节点"
+          />
+          <label class="switch">
+            <input id="show-archived" type="checkbox" />
+            <span>显示归档</span>
+          </label>
+          <button id="new-task-btn" class="btn btn-primary">+ 新建任务</button>
+          <button id="trash-btn" class="btn btn-ghost">回收站</button>
+          <button id="settings-btn" class="btn btn-ghost">设置</button>
+          <button id="logout-btn" class="btn btn-ghost hidden">退出</button>
+        </div>
+      </header>
+
+      <main>
+        <div id="board" class="board"></div>
+        <div id="empty-state" class="empty-state hidden">
+          <p>还没有任务</p>
+          <button id="empty-new-btn" class="btn btn-primary">创建第一个任务</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- 节点详情抽屉 -->
+    <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+    <aside id="node-drawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <input id="node-title" class="drawer-title" placeholder="节点名称" />
+        <button id="drawer-close" class="icon-btn" title="关闭">✕</button>
+      </div>
+      <div class="drawer-meta">
+        <span class="drawer-meta-hint">节点内容修改后会自动保存</span>
+        <button id="node-delete" class="btn btn-danger-ghost">删除节点</button>
+      </div>
+      <div class="drawer-body">
+        <label class="field-label">完成内容</label>
+        <textarea
+          id="node-content"
+          class="content-editor"
+          placeholder="填写该节点完成的内容，支持多行文本"
+        ></textarea>
+        <div id="save-hint" class="save-hint"></div>
+
+        <div class="attach-section">
+          <div class="attach-head">
+            <span class="field-label">附件</span>
+            <label class="btn btn-small btn-ghost">
+              上传附件
+              <input id="file-input" type="file" multiple hidden />
+            </label>
+          </div>
+          <div id="attach-meta" class="attach-meta"></div>
+          <div id="storage-picker" class="storage-picker">
+            <span class="storage-label">存储位置</span>
+            <label class="storage-opt">
+              <input type="radio" name="storage" value="local" checked />
+              本地
+            </label>
+            <label class="storage-opt" id="storage-r2-opt">
+              <input type="radio" name="storage" value="r2" />
+              Cloudflare R2
+            </label>
+          </div>
+          <div id="upload-progress" class="upload-progress hidden">
+            <div class="upload-progress-track">
+              <div id="upload-progress-bar" class="upload-progress-bar"></div>
+            </div>
+            <span id="upload-progress-text" class="upload-progress-text"></span>
+          </div>
+          <div id="dropzone" class="dropzone">拖拽文件到此处，或点击上方上传</div>
+          <ul id="attach-list" class="attach-list"></ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 任务编辑弹窗 -->
+    <div id="task-modal" class="modal-backdrop hidden">
+      <form id="task-form" class="modal">
+        <h3 id="task-modal-title">新建任务</h3>
+        <label class="field-label">任务名称</label>
+        <input id="task-title-input" class="input" required maxlength="120" />
+        <label class="field-label">任务描述</label>
+        <textarea
+          id="task-desc-input"
+          class="input"
+          rows="3"
+          placeholder="可选"
+        ></textarea>
+        <label class="field-label">颜色标记</label>
+        <div id="color-picker" class="color-picker"></div>
+        <div class="modal-actions">
+          <button type="button" id="task-cancel" class="btn btn-ghost">取消</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 回收站 -->
+    <div id="trash-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <div class="trash-head">
+          <h3>回收站</h3>
+          <button id="trash-close" class="icon-btn" title="关闭">✕</button>
+        </div>
+        <p class="trash-tip">
+          删除的任务、节点与附件会保留
+          <strong id="trash-retention">30</strong>
+          天，到期后自动彻底删除。
+        </p>
+        <ul id="trash-list" class="trash-list"></ul>
+        <div class="modal-actions">
+          <button id="trash-empty" class="btn btn-danger-ghost">清空回收站</button>
+          <button id="trash-done" class="btn btn-primary">完成</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div id="settings-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <div class="trash-head">
+          <h3>设置</h3>
+          <button id="settings-close" class="icon-btn" title="关闭">✕</button>
+        </div>
+        <div class="settings-body">
+          <section class="settings-section">
+            <div class="settings-section-head">
+              <h4>Cloudflare R2 附件存储</h4>
+              <span id="r2-status" class="settings-status">未配置</span>
+            </div>
+            <p class="settings-hint">
+              填写后，上传附件时可选择存入 R2；未填写则仅支持本地存储。Secret
+              只写入服务器，页面不会回显。
+            </p>
+            <div class="settings-grid">
+              <label class="settings-field">
+                <span>Account ID</span>
+                <input id="r2-accountId" class="input" placeholder="账户 ID" />
+              </label>
+              <label class="settings-field">
+                <span>Bucket</span>
+                <input id="r2-bucket" class="input" placeholder="存储桶名称" />
+              </label>
+              <label class="settings-field">
+                <span>Access Key ID</span>
+                <input id="r2-accessKeyId" class="input" autocomplete="off" />
+              </label>
+              <label class="settings-field">
+                <span>Secret Access Key</span>
+                <input
+                  id="r2-secretAccessKey"
+                  class="input"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="留空则不修改"
+                />
+              </label>
+              <label class="settings-field settings-field-wide">
+                <span>公开访问地址（R2 Public URL / 自定义域名）</span>
+                <input
+                  id="r2-publicBaseUrl"
+                  class="input"
+                  placeholder="https://pub-xxxx.r2.dev"
+                />
+              </label>
+              <label class="settings-field settings-field-wide">
+                <span>Endpoint（可选，留空按 Account ID 推导）</span>
+                <input
+                  id="r2-endpoint"
+                  class="input"
+                  placeholder="https://<account_id>.r2.cloudflarestorage.com"
+                />
+              </label>
+              <label class="settings-field">
+                <span>Region</span>
+                <input id="r2-region" class="input" placeholder="auto" />
+              </label>
+              <label class="settings-field">
+                <span>Key 前缀</span>
+                <input id="r2-prefix" class="input" placeholder="attachments" />
+              </label>
+            </div>
+            <label class="settings-check">
+              <input id="r2-forcePathStyle" type="checkbox" />
+              使用 path-style 访问（自定义 Endpoint 时通常需要）
+            </label>
+            <p id="settings-message" class="settings-message hidden"></p>
+          </section>
+        </div>
+        <div class="modal-actions">
+          <button id="settings-test" class="btn btn-ghost">测试连接</button>
+          <button id="settings-save" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 附件预览 -->
+    <div id="preview-modal" class="modal-backdrop hidden">
+      <div class="preview-dialog">
+        <div class="preview-head">
+          <span id="preview-title" class="preview-title"></span>
+          <div class="preview-actions">
+            <a id="preview-download" class="btn btn-small btn-ghost" download>下载</a>
+            <button id="preview-close" class="icon-btn" title="关闭">✕</button>
+          </div>
+        </div>
+        <div id="preview-body" class="preview-body"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
