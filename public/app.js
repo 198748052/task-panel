@@ -34,6 +34,7 @@ const el = {
   loginView: $('#login-view'),
   appView: $('#app-view'),
   loginForm: $('#login-form'),
+  loginUsername: $('#login-username'),
   loginPassword: $('#login-password'),
   loginError: $('#login-error'),
   logoutBtn: $('#logout-btn'),
@@ -107,6 +108,13 @@ const el = {
   remoteMessage: $('#remote-message'),
   remoteTest: $('#remote-test'),
   remoteSave: $('#remote-save'),
+  accountUsername: $('#account-username'),
+  accountCurrent: $('#account-current'),
+  accountNew: $('#account-new'),
+  accountConfirm: $('#account-confirm'),
+  accountSave: $('#account-save'),
+  accountStatus: $('#account-status'),
+  accountMessage: $('#account-message'),
   toast: $('#toast'),
 };
 
@@ -272,7 +280,10 @@ el.loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   el.loginError.classList.add('hidden');
   try {
-    await api('POST', '/api/login', { password: el.loginPassword.value });
+    await api('POST', '/api/login', {
+      username: el.loginUsername.value.trim(),
+      password: el.loginPassword.value,
+    });
     el.loginPassword.value = '';
     showApp();
     await refresh();
@@ -1170,17 +1181,59 @@ function readSettingsForm() {
 
 async function openSettings() {
   try {
-    const [data, system] = await Promise.all([
+    const [data, system, account] = await Promise.all([
       api('GET', '/api/settings'),
       api('GET', '/api/system'),
+      api('GET', '/api/account'),
     ]);
     fillSettingsForm(data.r2.values, data.r2.enabled, data.r2.hasSecret);
     fillRemoteForm(system);
+    fillAccountForm(account);
     el.settingsMessage.classList.add('hidden');
     el.remoteMessage.classList.add('hidden');
+    el.accountMessage.classList.add('hidden');
     el.settingsModal.classList.remove('hidden');
   } catch (err) {
     toast(err.message);
+  }
+}
+
+function fillAccountForm(account) {
+  const username = (account && account.username) || '';
+  el.accountUsername.value = username;
+  el.accountCurrent.value = '';
+  el.accountNew.value = '';
+  el.accountConfirm.value = '';
+  el.accountStatus.textContent = username ? '已启用' : '-';
+  el.accountStatus.classList.toggle('on', !!username);
+}
+
+function showAccountMessage(kind, text) {
+  el.accountMessage.textContent = text;
+  el.accountMessage.className = `settings-message ${kind}`;
+  el.accountMessage.classList.remove('hidden');
+}
+
+async function saveAccount() {
+  const newPassword = el.accountNew.value;
+  if (newPassword && newPassword !== el.accountConfirm.value) {
+    showAccountMessage('err', '两次输入的新密码不一致');
+    return;
+  }
+  el.accountSave.disabled = true;
+  try {
+    const res = await api('PUT', '/api/account', {
+      username: el.accountUsername.value.trim(),
+      currentPassword: el.accountCurrent.value,
+      newPassword,
+    });
+    fillAccountForm(res);
+    showAccountMessage('ok', '账号信息已更新');
+    toast('账号信息已更新');
+  } catch (err) {
+    showAccountMessage('err', err.message);
+  } finally {
+    el.accountSave.disabled = false;
   }
 }
 
@@ -1279,6 +1332,7 @@ el.settingsSave.addEventListener('click', saveSettings);
 el.settingsTest.addEventListener('click', testSettings);
 el.remoteSave.addEventListener('click', saveRemote);
 el.remoteTest.addEventListener('click', testRemote);
+el.accountSave.addEventListener('click', saveAccount);
 
 /* ------------------------------- update ------------------------------- */
 

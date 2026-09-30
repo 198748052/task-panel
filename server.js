@@ -111,10 +111,10 @@ app.post('/api/login', (req, res) => {
       .status(429)
       .json({ error: 'too_many_attempts', message: '尝试次数过多，请 5 分钟后再试' });
   }
-  const { password } = req.body || {};
-  if (!auth.checkPassword(password)) {
+  const { username, password } = req.body || {};
+  if (!auth.checkCredentials(username, password)) {
     recordFailure(ip);
-    return res.status(401).json({ error: 'bad_password', message: '口令错误' });
+    return res.status(401).json({ error: 'bad_credentials', message: '用户名或密码错误' });
   }
   setSessionCookie(res, auth.createToken());
   res.json({ ok: true });
@@ -123,6 +123,22 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => {
   res.clearCookie(auth.COOKIE_NAME, { path: '/' });
   res.json({ ok: true });
+});
+
+app.get('/api/account', requireAuth, (req, res) => {
+  const account = auth.getAccount();
+  res.json({ username: account ? account.username : '' });
+});
+
+app.put('/api/account', requireAuth, (req, res) => {
+  const { username, currentPassword, newPassword } = req.body || {};
+  try {
+    const account = auth.changeAccount({ username, currentPassword, newPassword });
+    setSessionCookie(res, auth.createToken());
+    res.json({ ok: true, username: account.username });
+  } catch (err) {
+    res.status(400).json({ error: err.code || 'update_failed', message: err.message });
+  }
 });
 
 /* ----------------------------- settings ------------------------------ */
@@ -420,11 +436,7 @@ setInterval(purgeExpiredTrash, 60 * 60 * 1000).unref();
 
 app.listen(PORT, HOST, () => {
   console.log(`任务面板已启动: http://${HOST}:${PORT}`);
-  console.log(
-    auth.isEnabled()
-      ? '已启用口令登录 (APP_PASSWORD)'
-      : '未设置 APP_PASSWORD，当前无需登录即可访问',
-  );
+  console.log('已启用账号登录，仅支持单个账号（不开放注册）');
 });
 
 module.exports = app;

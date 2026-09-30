@@ -16,11 +16,18 @@
     <div id="login-view" class="login-view hidden">
       <form id="login-form" class="login-card">
         <div class="login-logo">任务面板</div>
-        <p class="login-tip">请输入访问口令</p>
+        <p class="login-tip">请使用账号登录</p>
+        <input
+          id="login-username"
+          type="text"
+          placeholder="用户名"
+          autocomplete="username"
+          required
+        />
         <input
           id="login-password"
           type="password"
-          placeholder="访问口令"
+          placeholder="密码"
           autocomplete="current-password"
           required
         />
@@ -166,6 +173,53 @@
           <button id="settings-close" class="icon-btn" title="关闭">✕</button>
         </div>
         <div class="settings-body">
+          <section class="settings-section">
+            <div class="settings-section-head">
+              <h4>登录账号</h4>
+              <span id="account-status" class="settings-status">-</span>
+            </div>
+            <p class="settings-hint">
+              仅支持单个账号登录，不开放注册。修改密码后当前会话保持有效，其他已登录会话将自动失效。
+            </p>
+            <div class="settings-grid">
+              <label class="settings-field">
+                <span>用户名</span>
+                <input id="account-username" class="input" autocomplete="username" />
+              </label>
+              <label class="settings-field">
+                <span>当前密码</span>
+                <input
+                  id="account-current"
+                  class="input"
+                  type="password"
+                  autocomplete="current-password"
+                />
+              </label>
+              <label class="settings-field">
+                <span>新密码（留空则不修改）</span>
+                <input
+                  id="account-new"
+                  class="input"
+                  type="password"
+                  autocomplete="new-password"
+                />
+              </label>
+              <label class="settings-field">
+                <span>确认新密码</span>
+                <input
+                  id="account-confirm"
+                  class="input"
+                  type="password"
+                  autocomplete="new-password"
+                />
+              </label>
+            </div>
+            <p id="account-message" class="settings-message hidden"></p>
+            <div class="settings-actions">
+              <button id="account-save" class="btn btn-small btn-primary">保存账号</button>
+            </div>
+          </section>
+
           <section class="settings-section">
             <div class="settings-section-head">
               <h4>远程仓库（一键更新）</h4>
