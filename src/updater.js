@@ -212,9 +212,9 @@ function getStatus() {
 
 /* ------------------------------- steps -------------------------------- */
 
-function runStep(command, args) {
+function spawnStep(command, args, label) {
   return new Promise((resolve, reject) => {
-    appendLog(`$ ${command} ${args.join(' ')}`);
+    appendLog(`$ ${label}`);
     const child = spawn(command, args, {
       cwd: APP_DIR,
       env: process.env,
@@ -236,9 +236,17 @@ function runStep(command, args) {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`${command} ${args.join(' ')} 退出码 ${code}`));
+      else reject(new Error(`${label} 退出码 ${code}`));
     });
   });
+}
+
+function runStep(command, args) {
+  return spawnStep(command, args, `${command} ${args.join(' ')}`);
+}
+
+function runShell(command) {
+  return spawnStep('/bin/sh', ['-c', command], command);
 }
 
 /* ------------------------------ restart ------------------------------- */
@@ -274,6 +282,12 @@ function selfRestart() {
 }
 
 async function restartService() {
+  const custom = (process.env.RESTART_COMMAND || '').trim();
+  if (custom) {
+    appendLog(`使用 RESTART_COMMAND 重启：${custom}`);
+    await runShell(custom);
+    return 'custom';
+  }
   if (underPm2()) {
     appendLog(`检测到 pm2（pm_id=${process.env.pm_id}），使用 pm2 重启`);
     await runStep('pm2', ['restart', process.env.pm_id]);
@@ -282,8 +296,14 @@ async function restartService() {
   const unit = systemdUnit();
   if (unit) {
     appendLog(`检测到 systemd 单元 ${unit}，使用 systemctl 重启`);
-    await runStep('systemctl', ['restart', unit]);
-    return 'systemd';
+    try {
+      await runStep('systemctl', ['restart', unit]);
+      return 'systemd';
+    } catch (err) {
+      appendLog(`systemctl 重启 ${unit} 失败：${err.message}，尝试 sudo -n`);
+      await runStep('sudo', ['-n', 'systemctl', 'restart', unit]);
+      return 'systemd';
+    }
   }
   selfRestart();
   return 'self';
@@ -320,10 +340,12 @@ async function runUpdate(fromVersion) {
       writeStatus({
         status: 'failed',
         step: 'failed',
-        message: `重启失败：${err.message}`,
+        message: `代码与依赖已更新，但重启失败：${err.message}，请手动重启服务`,
         error: err.message,
       });
-      appendLog(`重启失败：${err.message}`);
+      appendLog(
+        `重启失败：${err.message}。代码与依赖已更新，请手动重启服务，或设置 RESTART_COMMAND 指定重启命令`,
+      );
     }
   } catch (err) {
     writeStatus({
