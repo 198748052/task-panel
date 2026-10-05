@@ -100,6 +100,7 @@ function clientFor(cfg) {
     region: cfg.region,
     endpoint: cfg.endpoint,
     forcePathStyle: cfg.forcePathStyle,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
     credentials: {
       accessKeyId: cfg.accessKeyId,
       secretAccessKey: cfg.secretAccessKey,
@@ -199,16 +200,16 @@ function makeKey(filename) {
   return cfg.prefix ? `${cfg.prefix}/${name}` : name;
 }
 
-async function putObject(key, body, contentType) {
+async function putObject(key, body, contentType, contentLength) {
   const { cfg } = resolveConfig();
-  await clientFor(cfg).send(
-    new PutObjectCommand({
-      Bucket: cfg.bucket,
-      Key: key,
-      Body: body,
-      ContentType: contentType || 'application/octet-stream',
-    }),
-  );
+  const params = {
+    Bucket: cfg.bucket,
+    Key: key,
+    Body: body,
+    ContentType: contentType || 'application/octet-stream',
+  };
+  if (contentLength) params.ContentLength = contentLength;
+  await clientFor(cfg).send(new PutObjectCommand(params));
   return key;
 }
 

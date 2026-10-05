@@ -21,6 +21,7 @@ const exporter = require('./src/export');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 100);
+const MAX_R2_UPLOAD_MB = Number(process.env.MAX_R2_UPLOAD_MB || 5120);
 
 const app = express();
 app.disable('x-powered-by');
@@ -41,8 +42,8 @@ const uploadLocal = multer({
   limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
 });
 const uploadR2 = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
+  storage: diskStorage,
+  limits: { fileSize: MAX_R2_UPLOAD_MB * 1024 * 1024 },
 });
 
 function selectUploader(req, res, next) {
@@ -100,6 +101,7 @@ app.get('/api/session', (req, res) => {
     authEnabled: auth.isEnabled(),
     authed: isAuthed(req),
     maxUploadMb: MAX_UPLOAD_MB,
+    maxR2UploadMb: MAX_R2_UPLOAD_MB,
     retentionDays: store.RETENTION_DAYS,
     r2Enabled: objectStore.isConfigured(),
     deployedDir: updater.getDeployedDir(),
@@ -293,7 +295,17 @@ app.post(
         let storedName = f.filename;
         if (target === 'r2') {
           storedName = objectStore.makeKey(f.originalname);
-          await objectStore.putObject(storedName, f.buffer, f.mimetype);
+          const stagedPath = path.join(UPLOAD_DIR, f.filename);
+          try {
+            await objectStore.putObject(
+              storedName,
+              fs.createReadStream(stagedPath),
+              f.mimetype,
+              f.size,
+            );
+          } finally {
+            fs.promises.unlink(stagedPath).catch(() => {});
+          }
         }
         created.push(
           store.addAttachment(req.params.id, {
@@ -429,9 +441,11 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
 
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
+    const limitMb =
+      req.uploadTarget === 'r2' ? MAX_R2_UPLOAD_MB : MAX_UPLOAD_MB;
     const message =
       err.code === 'LIMIT_FILE_SIZE'
-        ? `文件超过 ${MAX_UPLOAD_MB} MB 限制`
+        ? `文件超过 ${limitMb} MB 限制`
         : '文件上传失败';
     return res.status(400).json({ error: err.code, message });
   }

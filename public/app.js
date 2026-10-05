@@ -18,6 +18,7 @@ const state = {
   showArchived: false,
   authEnabled: false,
   maxUploadMb: 100,
+  maxR2UploadMb: 5120,
   retentionDays: 30,
   r2Enabled: false,
   editingTaskId: null,
@@ -266,6 +267,7 @@ async function boot() {
     const session = await api('GET', '/api/session');
     state.authEnabled = session.authEnabled;
     state.maxUploadMb = session.maxUploadMb || 100;
+    state.maxR2UploadMb = session.maxR2UploadMb || 5120;
     state.retentionDays = session.retentionDays || 30;
     state.r2Enabled = !!session.r2Enabled;
     el.trashRetention.textContent = state.retentionDays;
@@ -849,11 +851,24 @@ el.nodeDelete.addEventListener('click', async () => {
 
 /* ----------------------------- attachments ---------------------------- */
 
+function formatLimitMb(mb) {
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+  }
+  return `${mb} MB`;
+}
+
+function attachmentLimit() {
+  return selectedStorage() === 'r2' ? state.maxR2UploadMb : state.maxUploadMb;
+}
+
 function renderAttachments(list) {
   const total = list.reduce((s, a) => s + (Number(a.size) || 0), 0);
+  const limit = formatLimitMb(attachmentLimit());
   el.attachMeta.textContent = list.length
-    ? `${list.length} 个附件 · 共 ${formatSize(total)} · 单文件上限 ${state.maxUploadMb} MB`
-    : `单文件上限 ${state.maxUploadMb} MB`;
+    ? `${list.length} 个附件 · 共 ${formatSize(total)} · 单文件上限 ${limit}`
+    : `单文件上限 ${limit}`;
   if (!list.length) {
     el.attachList.innerHTML =
       '<li class="card-empty" style="padding:6px 2px">暂无附件</li>';
@@ -1046,6 +1061,13 @@ el.dropzone.addEventListener('drop', (e) => {
   uploadFiles([...e.dataTransfer.files]);
 });
 el.dropzone.addEventListener('click', () => el.fileInput.click());
+
+document.querySelectorAll('input[name="storage"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    const node = currentNode();
+    if (node) renderAttachments(node.attachments);
+  });
+});
 
 /* ------------------------------ preview ------------------------------- */
 
