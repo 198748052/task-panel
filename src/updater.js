@@ -323,8 +323,12 @@ function runShell(command) {
 /* ------------------------- working tree guard ------------------------- */
 
 /**
- * reset --hard 会无条件丢弃 tracked 修改，并删除所有未跟踪文件与目录。
- * 更新前先体检，发现本地改动就中止，让使用者自己决定怎么处理。
+ * 更新流程执行的是 reset --hard，它只覆盖被跟踪（tracked）文件，不会删除
+ * 未跟踪文件。因此这里只拦「被跟踪文件的改动」，放行 .htaccess、启动脚本
+ * 这类部署目录里的本地未跟踪文件。
+ *
+ * 唯一例外：若未跟踪文件与即将拉取的文件同名，reset --hard 会静默覆盖它，
+ * 这种情况单独校验，见 findUntrackedCollisions()。
  */
 async function inspectWorkingTree() {
   if (!isGitRepo()) {
@@ -341,23 +345,20 @@ async function inspectWorkingTree() {
     ),
   ]);
 
-  const dirty = statusOut
+  const lines = statusOut
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => line.trimEnd())
     .filter(Boolean);
+  // 以 ?? 开头的为未跟踪文件，reset --hard 不碰它们
+  const tracked = lines.filter((line) => !line.startsWith('??'));
 
   const out = {
-    dirty: false,
-    files: [],
+    dirty: tracked.length > 0,
+    files: tracked.slice(0, 20),
     head: head.slice(0, 7),
     target: target ? target.slice(0, 7) : null,
     upToDate: false,
   };
-
-  if (dirty.length) {
-    out.dirty = true;
-    out.files = dirty.slice(0, 20);
-  }
 
   if (out.target) {
     out.upToDate = head.trim() === target.trim();
@@ -366,10 +367,34 @@ async function inspectWorkingTree() {
   return out;
 }
 
+/**
+ * 找出「本地未跟踪、但远程即将引入同名路径」的文件。
+ * reset --hard 会直接覆盖它们且不报错，属于静默数据丢失，必须拦下。
+ */
+async function findUntrackedCollisions(branch) {
+  const untracked = (await execGit(['ls-files', '--others', '--exclude-standard']))
+    .split('\n')
+    .filter(Boolean);
+  if (!untracked.length) return [];
+
+  const incoming = new Set(
+    (await execGit(['ls-tree', '-r', '--name-only', `origin/${branch}`]))
+      .split('\n')
+      .filter(Boolean),
+  );
+  return untracked.filter((file) => incoming.has(file));
+}
+
 function dirtyMessage(inspect) {
   const preview = inspect.files.slice(0, 5).join('、');
   const more = inspect.files.length > 5 ? ` 等 ${inspect.files.length} 项` : '';
   return `部署目录存在本地改动：${preview}${more}。请先提交或备份后重试`;
+}
+
+function collisionMessage(files) {
+  const preview = files.slice(0, 5).join('、');
+  const more = files.length > 5 ? ` 等 ${files.length} 项` : '';
+  return `以下本地文件会被远程同名文件覆盖：${preview}${more}。请先重命名或备份后重试`;
 }
 
 /* ------------------------------ restart ------------------------------- */
@@ -479,7 +504,7 @@ async function runUpdate(fromVersion) {
     appendLog(
       `部署目录检查：HEAD ${inspect.head}，目标 ${inspect.target || '未知'}${
         inspect.upToDate ? '（已是最新）' : ''
-      }，本地改动 ${inspect.dirty ? `${inspect.files.length} 项` : '无'}`,
+      }，被跟踪文件改动 ${inspect.dirty ? `${inspect.files.length} 项` : '无'}`,
     );
     if (inspect.dirty) {
       const err = new Error(dirtyMessage(inspect));
@@ -489,6 +514,16 @@ async function runUpdate(fromVersion) {
 
     writeStatus({ step: 'pulling', message: '正在拉取最新代码…' });
     await runStep('git', ['fetch', '--prune', 'origin', branch], GIT_TIMEOUT_MS);
+
+    // fetch 之后才能拿到最新的远程文件清单，据此校验未跟踪文件的同名冲突
+    const collisions = await findUntrackedCollisions(branch);
+    if (collisions.length) {
+      appendLog(`发现未跟踪文件同名冲突：${collisions.join('、')}`);
+      const err = new Error(collisionMessage(collisions));
+      err.code = 'untracked_collision';
+      throw err;
+    }
+
     await runStep('git', ['reset', '--hard', `origin/${branch}`], GIT_TIMEOUT_MS);
     const toVersion = getVersion();
 
