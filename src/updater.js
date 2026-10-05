@@ -438,9 +438,13 @@ async function restartService() {
     return 'custom';
   }
   if (underPm2()) {
-    appendLog(`检测到 pm2（pm_id=${process.env.pm_id}），使用 pm2 重启`);
-    await runStep('pm2', ['restart', process.env.pm_id], NPM_TIMEOUT_MS);
-    return 'pm2';
+    try {
+      appendLog(`检测到 pm2（pm_id=${process.env.pm_id}），使用 pm2 重启`);
+      await runStep('pm2', ['restart', process.env.pm_id], NPM_TIMEOUT_MS);
+      return 'pm2';
+    } catch (err) {
+      appendLog(`pm2 重启失败：${err.message}，回退为 execve 接替`);
+    }
   }
   const unit = systemdUnit();
   if (unit) {
@@ -450,8 +454,15 @@ async function restartService() {
       return 'systemd';
     } catch (err) {
       appendLog(`systemctl 重启 ${unit} 失败：${err.message}，尝试 sudo -n`);
-      await runStep('sudo', ['-n', 'systemctl', 'restart', unit], NPM_TIMEOUT_MS);
-      return 'systemd';
+      try {
+        await runStep('sudo', ['-n', 'systemctl', 'restart', unit], NPM_TIMEOUT_MS);
+        return 'systemd';
+      } catch (sudoErr) {
+        appendLog(
+          `sudo -n 重启同样失败：${sudoErr.message}。` +
+            'execve 接替保持 PID 不变，systemd 无需授权即可完成重启',
+        );
+      }
     }
   }
   return selfRestart();
