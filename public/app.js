@@ -116,6 +116,7 @@ const el = {
   accountStatus: $('#account-status'),
   accountMessage: $('#account-message'),
   toast: $('#toast'),
+  nodeTooltip: $('#node-tooltip'),
 };
 
 /* ------------------------------- helpers ------------------------------ */
@@ -319,6 +320,7 @@ function visibleTasks() {
 }
 
 function renderBoard() {
+  hideNodeTooltip();
   const tasks = visibleTasks();
   const active = state.tasks.filter((t) => !t.archived);
   const totalNodes = active.reduce((sum, t) => sum + t.nodes.length, 0);
@@ -712,6 +714,57 @@ el.board.addEventListener('change', (e) => {
   fileInput.value = '';
   renderComposerFiles();
 });
+
+/* ---------------------------- node tooltip --------------------------- */
+
+function showNodeTooltip(row) {
+  const found = findNode(Number(row.dataset.id));
+  if (!found) return;
+  const content = (found.node.content || '').trim();
+  if (!content) return;
+  el.nodeTooltip.textContent = content;
+  el.nodeTooltip.classList.remove('hidden');
+  positionNodeTooltip(row);
+}
+
+function positionNodeTooltip(row) {
+  const tip = el.nodeTooltip;
+  const rect = row.getBoundingClientRect();
+  const gap = 8;
+  const tipRect = tip.getBoundingClientRect();
+  let top = rect.bottom + gap;
+  if (top + tipRect.height > window.innerHeight - gap) {
+    const above = rect.top - gap - tipRect.height;
+    top = above >= gap ? above : Math.max(gap, window.innerHeight - gap - tipRect.height);
+  }
+  let left = rect.left;
+  if (left + tipRect.width > window.innerWidth - gap) {
+    left = window.innerWidth - gap - tipRect.width;
+  }
+  tip.style.top = `${top}px`;
+  tip.style.left = `${Math.max(gap, left)}px`;
+}
+
+function hideNodeTooltip() {
+  el.nodeTooltip.classList.add('hidden');
+}
+
+el.board.addEventListener('mouseover', (e) => {
+  const row = e.target.closest('.node-row');
+  if (!row || row.contains(e.relatedTarget)) return;
+  showNodeTooltip(row);
+});
+
+el.board.addEventListener('mouseout', (e) => {
+  const row = e.target.closest('.node-row');
+  if (!row || row.contains(e.relatedTarget)) return;
+  hideNodeTooltip();
+});
+
+el.board.addEventListener('dragstart', hideNodeTooltip);
+
+window.addEventListener('scroll', hideNodeTooltip, true);
+window.addEventListener('resize', hideNodeTooltip);
 
 /* ------------------------------- drawer ------------------------------- */
 
