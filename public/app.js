@@ -69,14 +69,14 @@ const el = {
   uploadProgress: $('#upload-progress'),
   uploadProgressBar: $('#upload-progress-bar'),
   uploadProgressText: $('#upload-progress-text'),
-  trashBtn: $('#trash-btn'),
+  openTrashBtn: $('#open-trash-btn'),
   trashModal: $('#trash-modal'),
   trashClose: $('#trash-close'),
   trashList: $('#trash-list'),
   trashEmpty: $('#trash-empty'),
   trashDone: $('#trash-done'),
   trashRetention: $('#trash-retention'),
-  updateBtn: $('#update-btn'),
+  openUpdateBtn: $('#open-update-btn'),
   updateModal: $('#update-modal'),
   updateClose: $('#update-close'),
   updateStep: $('#update-step'),
@@ -1168,7 +1168,10 @@ function closeTrash() {
   el.trashModal.classList.add('hidden');
 }
 
-el.trashBtn.addEventListener('click', openTrash);
+el.openTrashBtn.addEventListener('click', () => {
+  closeSettings();
+  openTrash();
+});
 el.trashClose.addEventListener('click', closeTrash);
 el.trashDone.addEventListener('click', closeTrash);
 el.trashModal.addEventListener('click', (e) => {
@@ -1568,7 +1571,10 @@ async function pollUpdate(token) {
   }
 }
 
-el.updateBtn.addEventListener('click', startUpdate);
+el.openUpdateBtn.addEventListener('click', () => {
+  closeSettings();
+  startUpdate();
+});
 el.updateClose.addEventListener('click', closeUpdate);
 el.updateDone.addEventListener('click', () => {
   if (el.updateDone.textContent === '刷新页面') location.reload();

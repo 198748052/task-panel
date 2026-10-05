@@ -55,8 +55,6 @@
             <span>显示归档</span>
           </label>
           <button id="new-task-btn" class="btn btn-primary">+ 新建任务</button>
-          <button id="trash-btn" class="btn btn-ghost">回收站</button>
-          <button id="update-btn" class="btn btn-ghost">更新</button>
           <button id="settings-btn" class="btn btn-ghost">设置</button>
           <button id="logout-btn" class="btn btn-ghost hidden">退出</button>
         </div>
@@ -184,6 +182,9 @@
           </button>
           <button type="button" class="settings-tab" data-panel="export">
             数据导出
+          </button>
+          <button type="button" class="settings-tab" data-panel="system">
+            系统维护
           </button>
         </div>
         <div id="settings-body" class="settings-body">
@@ -345,6 +346,29 @@
               <button id="export-btn" class="btn btn-small btn-primary">
                 导出全部内容
               </button>
+            </div>
+          </section>
+
+          <section class="settings-section" data-panel="system" hidden>
+            <div class="settings-section-head">
+              <h4>系统维护</h4>
+            </div>
+            <p class="settings-hint">回收站与系统更新的集中入口。</p>
+            <div class="settings-rows">
+              <div class="settings-row">
+                <div class="settings-row-text">
+                  <span class="settings-row-title">回收站</span>
+                  <span class="settings-row-desc">查看、恢复或彻底删除已移入回收站的任务、节点与附件。</span>
+                </div>
+                <button type="button" id="open-trash-btn" class="btn btn-small btn-ghost">打开</button>
+              </div>
+              <div class="settings-row">
+                <div class="settings-row-text">
+                  <span class="settings-row-title">系统更新</span>
+                  <span class="settings-row-desc">从远程仓库拉取最新代码并重启服务。</span>
+                </div>
+                <button type="button" id="open-update-btn" class="btn btn-small btn-ghost">检查更新</button>
+              </div>
             </div>
           </section>
         </div>

@@ -1232,6 +1232,44 @@ main {
   margin-top: 12px;
 }
 
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.settings-row-desc {
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.settings-row .btn {
+  flex-shrink: 0;
+}
+
 @media (max-width: 600px) {
   .settings-grid {
     grid-template-columns: 1fr;
