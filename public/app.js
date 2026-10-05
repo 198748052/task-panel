@@ -92,6 +92,8 @@ const el = {
   settingsTest: $('#settings-test'),
   settingsSave: $('#settings-save'),
   settingsMessage: $('#settings-message'),
+  exportBtn: $('#export-btn'),
+  exportMessage: $('#export-message'),
   r2Status: $('#r2-status'),
   r2AccountId: $('#r2-accountId'),
   r2Bucket: $('#r2-bucket'),
@@ -1243,6 +1245,7 @@ async function openSettings() {
     el.settingsMessage.classList.add('hidden');
     el.remoteMessage.classList.add('hidden');
     el.accountMessage.classList.add('hidden');
+    el.exportMessage.classList.add('hidden');
     el.settingsModal.classList.remove('hidden');
   } catch (err) {
     toast(err.message);
@@ -1374,6 +1377,48 @@ async function testSettings() {
   }
 }
 
+function showExportMessage(kind, text) {
+  el.exportMessage.textContent = text;
+  el.exportMessage.className = `settings-message ${kind}`;
+  el.exportMessage.classList.remove('hidden');
+}
+
+async function exportAllContent() {
+  el.exportBtn.disabled = true;
+  showExportMessage('info', '正在打包，请稍候…');
+  try {
+    const res = await fetch('/api/export', { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = '导出失败';
+      try {
+        const data = await res.json();
+        if (data && data.message) message = data.message;
+      } catch (_) {
+        /* not json */
+      }
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const dispo = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^";]+)"?/.exec(dispo);
+    const filename = match ? match[1] : 'task-board-export.zip';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showExportMessage('ok', '导出完成，文件已开始下载');
+    toast('导出完成');
+  } catch (err) {
+    showExportMessage('err', err.message || '导出失败');
+  } finally {
+    el.exportBtn.disabled = false;
+  }
+}
+
 el.settingsBtn.addEventListener('click', openSettings);
 el.settingsClose.addEventListener('click', closeSettings);
 el.settingsModal.addEventListener('click', (e) => {
@@ -1384,6 +1429,7 @@ el.settingsTest.addEventListener('click', testSettings);
 el.remoteSave.addEventListener('click', saveRemote);
 el.remoteTest.addEventListener('click', testRemote);
 el.accountSave.addEventListener('click', saveAccount);
+el.exportBtn.addEventListener('click', exportAllContent);
 
 /* ------------------------------- update ------------------------------- */
 

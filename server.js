@@ -16,6 +16,7 @@ const { UPLOAD_DIR } = require('./src/db');
 const objectStore = require('./src/storage');
 const auth = require('./src/auth');
 const updater = require('./src/updater');
+const exporter = require('./src/export');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -384,6 +385,35 @@ app.delete('/api/trash/:batch', requireAuth, (req, res) => {
   if (items === null) return res.status(404).json({ error: 'not_found' });
   removeStored(items);
   res.json({ ok: true });
+});
+
+/* ------------------------------- export ------------------------------ */
+
+app.get('/api/export', requireAuth, (req, res, next) => {
+  let snapshot;
+  try {
+    snapshot = store.exportSnapshot();
+  } catch (err) {
+    return next(err);
+  }
+  if (snapshot.length === 0) {
+    return res.status(400).json({ error: 'empty', message: '没有可导出的内容' });
+  }
+
+  const stamp = new Date()
+    .toISOString()
+    .replace(/\.\d+Z$/, '')
+    .replace(/[-:]/g, '')
+    .replace('T', '-');
+  const filename = `task-board-export-${stamp}.zip`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  exporter.buildArchive(res, snapshot).catch((err) => {
+    if (res.headersSent) res.destroy(err);
+    else next(err);
+  });
 });
 
 /* ------------------------------ static ------------------------------- */

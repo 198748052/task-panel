@@ -82,6 +82,70 @@ function listTasks() {
   }));
 }
 
+function exportSnapshot() {
+  const tasks = db
+    .prepare(
+      'SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY archived ASC, sort_order ASC, id ASC',
+    )
+    .all();
+  const nodes = db
+    .prepare(
+      'SELECT * FROM nodes WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC',
+    )
+    .all();
+  const atts = db
+    .prepare(
+      'SELECT * FROM attachments WHERE deleted_at IS NULL ORDER BY id ASC',
+    )
+    .all();
+
+  const attsByNode = new Map();
+  for (const a of atts) {
+    const kind = a.storage || 'local';
+    if (!attsByNode.has(a.node_id)) attsByNode.set(a.node_id, []);
+    attsByNode.get(a.node_id).push({
+      id: a.id,
+      node_id: a.node_id,
+      stored_name: a.stored_name,
+      original_name: a.original_name,
+      mime_type: a.mime_type,
+      size: a.size,
+      storage: kind,
+      url: kind === 'r2' ? storage.publicUrl(a.stored_name) : null,
+      created_at: a.created_at,
+    });
+  }
+
+  const nodesByTask = new Map();
+  for (const n of nodes) {
+    const node = {
+      id: n.id,
+      task_id: n.task_id,
+      title: n.title,
+      content: n.content,
+      done: !!n.done,
+      sort_order: n.sort_order,
+      created_at: n.created_at,
+      updated_at: n.updated_at,
+      attachments: attsByNode.get(n.id) || [],
+    };
+    if (!nodesByTask.has(n.task_id)) nodesByTask.set(n.task_id, []);
+    nodesByTask.get(n.task_id).push(node);
+  }
+
+  return tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    color: t.color,
+    archived: !!t.archived,
+    sort_order: t.sort_order,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+    nodes: nodesByTask.get(t.id) || [],
+  }));
+}
+
 function getTask(id) {
   return db
     .prepare('SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL')
@@ -556,6 +620,7 @@ module.exports = {
   UPLOAD_DIR,
   RETENTION_DAYS,
   listTasks,
+  exportSnapshot,
   getTask,
   createTask,
   updateTask,

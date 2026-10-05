@@ -6,13 +6,15 @@
   "main": "server.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch server.js"
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1142.0",
+    "archiver": "^7.0.1",
     "cookie-parser": "^1.4.7",
     "express": "^4.21.2",
     "multer": "^2.0.1"
