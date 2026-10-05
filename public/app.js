@@ -412,9 +412,7 @@ function nodeRowHtml(node, index) {
   return `
     <li class="node-row" data-id="${node.id}" draggable="true">
       <span class="node-index">${index + 1}</span>
-      <button type="button" class="node-name" title="点击查看/编辑内容">${escapeHtml(
-        node.title,
-      )}</button>
+      <button type="button" class="node-name">${escapeHtml(node.title)}</button>
       ${
         count
           ? `<span class="node-badge" title="${count} 个附件 · ${formatSize(
