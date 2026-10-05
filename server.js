@@ -101,6 +101,7 @@ app.get('/api/session', (req, res) => {
     maxUploadMb: MAX_UPLOAD_MB,
     retentionDays: store.RETENTION_DAYS,
     r2Enabled: objectStore.isConfigured(),
+    deployedDir: updater.getDeployedDir(),
   });
 });
 
@@ -434,9 +435,40 @@ function purgeExpiredTrash() {
 purgeExpiredTrash();
 setInterval(purgeExpiredTrash, 60 * 60 * 1000).unref();
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`任务面板已启动: http://${HOST}:${PORT}`);
   console.log('已启用账号登录，仅支持单个账号（不开放注册）');
+});
+
+/*
+ * execve 重启时旧进程的 server 尚未 close，新进程立刻 listen 会撞 EADDRINUSE。
+ * 先释放端口再让出执行权，保证同一 PID 换新代码时服务始终可用。
+ */
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`端口 ${PORT} 已被占用，请先停止占用进程或修改 PORT 后重启`);
+  } else {
+    console.error('服务启动失败:', err);
+  }
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('未捕获异常:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('未处理的 Promise 拒绝:', err);
+});
+
+/*
+ * execve 重启时旧进程的 server 尚未 close，新进程立刻 listen 会撞 EADDRINUSE。
+ * 先释放端口再让出执行权，保证同一 PID 换新代码时服务始终可用。
+ */
+updater.setHttpCloser((done) => {
+  server.close(() => done());
+  // 长连接会让 close 一直等，给一个上限兜底
+  setTimeout(done, 3000).unref();
 });
 
 module.exports = app;

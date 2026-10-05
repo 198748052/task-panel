@@ -1420,6 +1420,11 @@ async function pollUpdate(token) {
       el.updateDone.disabled = false;
       return;
     }
+    if (u.status === 'interrupted') {
+      el.updateStep.textContent = u.message || '上次更新在重启过程中中断，请确认版本后重试';
+      el.updateDone.disabled = false;
+      return;
+    }
   }
   if (token === updatePollToken) {
     el.updateStep.textContent = '更新状态未知，请手动刷新页面查看。';
