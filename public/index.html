@@ -172,8 +172,22 @@
           <h3>设置</h3>
           <button id="settings-close" class="icon-btn" title="关闭">✕</button>
         </div>
-        <div class="settings-body">
-          <section class="settings-section">
+        <div id="settings-tabs" class="settings-tabs" role="tablist">
+          <button type="button" class="settings-tab active" data-panel="account">
+            账号安全
+          </button>
+          <button type="button" class="settings-tab" data-panel="remote">
+            远程更新
+          </button>
+          <button type="button" class="settings-tab" data-panel="storage">
+            文件存储
+          </button>
+          <button type="button" class="settings-tab" data-panel="export">
+            数据导出
+          </button>
+        </div>
+        <div id="settings-body" class="settings-body">
+          <section class="settings-section" data-panel="account">
             <div class="settings-section-head">
               <h4>登录账号</h4>
               <span id="account-status" class="settings-status">-</span>
@@ -220,7 +234,7 @@
             </div>
           </section>
 
-          <section class="settings-section">
+          <section class="settings-section" data-panel="remote" hidden>
             <div class="settings-section-head">
               <h4>远程仓库（一键更新）</h4>
               <span id="remote-status" class="settings-status">未配置</span>
@@ -249,7 +263,7 @@
             <p id="remote-message" class="settings-message hidden"></p>
           </section>
 
-          <section class="settings-section">
+          <section class="settings-section" data-panel="storage" hidden>
             <div class="settings-section-head">
               <h4>Cloudflare R2 附件存储</h4>
               <span id="r2-status" class="settings-status">未配置</span>
@@ -311,9 +325,13 @@
               使用 path-style 访问（自定义 Endpoint 时通常需要）
             </label>
             <p id="settings-message" class="settings-message hidden"></p>
+            <div class="settings-actions">
+              <button id="settings-test" class="btn btn-small btn-ghost">测试连接</button>
+              <button id="settings-save" class="btn btn-small btn-primary">保存存储配置</button>
+            </div>
           </section>
 
-          <section class="settings-section">
+          <section class="settings-section" data-panel="export" hidden>
             <div class="settings-section-head">
               <h4>导出全部内容</h4>
               <span class="settings-status">数据备份</span>
@@ -329,10 +347,6 @@
               </button>
             </div>
           </section>
-        </div>
-        <div class="modal-actions">
-          <button id="settings-test" class="btn btn-ghost">测试连接</button>
-          <button id="settings-save" class="btn btn-primary">保存</button>
         </div>
       </div>
     </div>

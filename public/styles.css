@@ -1098,6 +1098,49 @@ main {
   padding-right: 4px;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 2px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.settings-tab {
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+}
+
+.settings-tab.active {
+  background: #fff;
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 600px) {
+  .settings-tabs {
+    flex-wrap: wrap;
+  }
+
+  .settings-tab {
+    flex: 1 1 40%;
+  }
+}
+
 .settings-section-head {
   display: flex;
   align-items: center;
@@ -1180,12 +1223,6 @@ main {
 
 .settings-message.info {
   color: var(--text-soft);
-}
-
-.settings-section + .settings-section {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
 }
 
 .settings-actions {

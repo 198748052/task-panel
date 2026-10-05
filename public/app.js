@@ -89,6 +89,8 @@ const el = {
   settingsBtn: $('#settings-btn'),
   settingsModal: $('#settings-modal'),
   settingsClose: $('#settings-close'),
+  settingsTabs: $('#settings-tabs'),
+  settingsBody: $('#settings-body'),
   settingsTest: $('#settings-test'),
   settingsSave: $('#settings-save'),
   settingsMessage: $('#settings-message'),
@@ -1246,10 +1248,21 @@ async function openSettings() {
     el.remoteMessage.classList.add('hidden');
     el.accountMessage.classList.add('hidden');
     el.exportMessage.classList.add('hidden');
+    showSettingsTab('account');
     el.settingsModal.classList.remove('hidden');
   } catch (err) {
     toast(err.message);
   }
+}
+
+function showSettingsTab(name) {
+  el.settingsTabs.querySelectorAll('.settings-tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.panel === name);
+  });
+  el.settingsBody.querySelectorAll('.settings-section').forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== name;
+  });
+  el.settingsBody.scrollTop = 0;
 }
 
 function fillAccountForm(account) {
@@ -1421,6 +1434,10 @@ async function exportAllContent() {
 
 el.settingsBtn.addEventListener('click', openSettings);
 el.settingsClose.addEventListener('click', closeSettings);
+el.settingsTabs.addEventListener('click', (e) => {
+  const tab = e.target.closest('.settings-tab');
+  if (tab) showSettingsTab(tab.dataset.panel);
+});
 el.settingsModal.addEventListener('click', (e) => {
   if (e.target === el.settingsModal) closeSettings();
 });
