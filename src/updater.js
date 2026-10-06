@@ -10,10 +10,12 @@ const settings = require('./settings');
 const APP_DIR = path.join(__dirname, '..');
 const LOG_FILE = path.join(DATA_DIR, 'update.log');
 const STATUS_FILE = path.join(DATA_DIR, 'update-status.json');
+const LOCK_FILE = path.join(DATA_DIR, 'update.lock');
 const MAX_LOG_BYTES = 200 * 1024;
 const LOG_TAIL_BYTES = 20000;
 const GIT_TIMEOUT_MS = 60 * 1000;
 const NPM_TIMEOUT_MS = 5 * 60 * 1000;
+const STALE_LOCK_MS = 15 * 60 * 1000;
 
 const DEFAULT_BRANCH = process.env.DEPLOY_BRANCH || 'main';
 const BRANCH_KEY = 'deploy_branch';
@@ -224,14 +226,62 @@ function writeStatus(patch) {
   return next;
 }
 
+/* --------------------------- cross-process lock ----------------------- */
+
 /**
- * 进程重启后 inProgress 归零，状态文件可能停在两种非终态：
+ * inProgress 只在单进程内有效。pm2 cluster / 多实例部署下必须靠文件锁
+ * 保证同一时刻只有一个更新任务。wx 标志保证「创建」是原子操作；获取失败
+ * 时读取锁内容，超过 STALE_LOCK_MS 的视为进程被硬杀留下的陈旧锁并接管。
+ */
+function tryAcquireLock() {
+  const payload = JSON.stringify({ pid: process.pid, startedAt: Date.now() });
+  try {
+    fs.writeFileSync(LOCK_FILE, payload, { flag: 'wx' });
+    return true;
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+
+  let stale = true;
+  try {
+    const info = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+    stale = !info.startedAt || Date.now() - info.startedAt > STALE_LOCK_MS;
+  } catch {
+    stale = true;
+  }
+  if (!stale) return false;
+
+  try {
+    fs.rmSync(LOCK_FILE, { force: true });
+    fs.writeFileSync(LOCK_FILE, payload, { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseLock() {
+  try {
+    fs.rmSync(LOCK_FILE, { force: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 进程重启后 inProgress 归零，状态文件可能停在非终态，按以下规则收尾：
  *
- * - step 为 handing_over：execve 换掉进程前主动写入，新进程读到即认定
- *   上次更新已交接完成，补一个 done 收尾。旧进程在 execve 前被硬杀
- *   （SIGKILL、OOM、cgroup 回收）也会留下这个标记，此时补 done 略有
- *   美化，但此时代码与依赖都已就绪，重启由外部管理器完成，结果一致。
- * - 其余 running 状态：重启环节被真正打断，保留 interrupted 提示重试。
+ * - step 为 handing_over：重启前主动落盘的交接标记，execve、pm2、systemd
+ *   触发重启前都会写入，新进程读到即认定上次更新已交接完成，补一个 done。
+ *   旧进程在交接前被硬杀（SIGKILL、OOM、cgroup 回收）也会留下这个标记，
+ *   此时补 done 略有美化，但代码与依赖都已就绪，重启由外部管理器完成，
+ *   结果一致。
+ * - 其余 running 状态：重启环节被真正打断（含 reset 后 npm 安装期间被杀），
+ *   保留 interrupted 提示重试。
+ *
+ * 这里刻意不用「toVersion 等于当前 HEAD」作判据：reset --hard 之后、依赖
+ * 尚未装完时磁盘 HEAD 就已经是新版本，若有另一个实例（pm2 cluster）此刻
+ * 轮询状态，会被误判为 done。
  */
 function reconcileStatus(data) {
   if (data.status !== 'running' || inProgress) return data;
@@ -368,21 +418,23 @@ async function inspectWorkingTree() {
 }
 
 /**
- * 找出「本地未跟踪、但远程即将引入同名路径」的文件。
+ * 找出「本地存在、HEAD 未跟踪、而远程即将跟踪」的同名路径。
  * reset --hard 会直接覆盖它们且不报错，属于静默数据丢失，必须拦下。
+ *
+ * 用 HEAD 清单过滤 + 本地文件存在性判断，天然覆盖被 .gitignore 忽略的
+ * 文件（.env、data/ 等），也无需枚举 node_modules 这类忽略目录。
  */
 async function findUntrackedCollisions(branch) {
-  const untracked = (await execGit(['ls-files', '--others', '--exclude-standard']))
-    .split('\n')
-    .filter(Boolean);
-  if (!untracked.length) return [];
+  const [headList, incomingList] = await Promise.all([
+    execGit(['ls-tree', '-r', '--name-only', 'HEAD']),
+    execGit(['ls-tree', '-r', '--name-only', `origin/${branch}`]),
+  ]);
 
-  const incoming = new Set(
-    (await execGit(['ls-tree', '-r', '--name-only', `origin/${branch}`]))
-      .split('\n')
-      .filter(Boolean),
-  );
-  return untracked.filter((file) => incoming.has(file));
+  const tracked = new Set(headList.split('\n').filter(Boolean));
+  return incomingList
+    .split('\n')
+    .filter(Boolean)
+    .filter((file) => !tracked.has(file) && fs.existsSync(path.join(APP_DIR, file)));
 }
 
 function dirtyMessage(inspect) {
@@ -463,9 +515,17 @@ async function restartService() {
     return 'custom';
   }
   if (underPm2()) {
+    // 优先按应用名重启，让 cluster 模式下所有实例一起换新代码；只重启单个
+    // pm_id 会让其余 worker 继续跑旧代码。环境未提供 name 时退回 pm_id。
+    const appName = (process.env.name || '').trim();
+    const target = appName || process.env.pm_id;
     try {
-      appendLog(`检测到 pm2（pm_id=${process.env.pm_id}），使用 pm2 重启`);
-      await runStep('pm2', ['restart', process.env.pm_id], NPM_TIMEOUT_MS);
+      appendLog(
+        appName
+          ? `检测到 pm2（${appName}），使用 pm2 restart ${appName} 重启全部实例`
+          : `检测到 pm2（pm_id=${process.env.pm_id}），使用 pm2 重启`,
+      );
+      await runStep('pm2', ['restart', target], NPM_TIMEOUT_MS);
       return 'pm2';
     } catch (err) {
       appendLog(`pm2 重启失败：${err.message}，回退为 execve 接替`);
@@ -494,6 +554,32 @@ async function restartService() {
 }
 
 /* ------------------------------- update ------------------------------- */
+
+/**
+ * npm ci 会先清空 node_modules，万一安装失败，磁盘代码已是新版、依赖却是
+ * 坏的，下次重启可能起不来。这里回滚到更新前的 commit，并尽量按旧 lock
+ * 恢复依赖，让运行中的旧代码与磁盘保持一致。
+ */
+async function rollback(fromVersion) {
+  if (!fromVersion) {
+    appendLog('缺少更新前版本号，跳过代码回滚，请手动处理');
+    return false;
+  }
+  try {
+    await runStep('git', ['reset', '--hard', fromVersion], GIT_TIMEOUT_MS);
+    appendLog(`代码已回滚到 ${fromVersion}`);
+  } catch (err) {
+    appendLog(`代码回滚失败：${err.message}，请手动恢复`);
+    return false;
+  }
+  try {
+    await runStep('npm', ['ci', '--omit=dev'], NPM_TIMEOUT_MS);
+    appendLog('旧版本依赖已恢复');
+  } catch (err) {
+    appendLog(`旧版本依赖恢复失败：${err.message}，请手动执行 npm ci`);
+  }
+  return true;
+}
 
 async function runUpdate(fromVersion) {
   try {
@@ -543,23 +629,41 @@ async function runUpdate(fromVersion) {
     }
 
     writeStatus({ step: 'installing', message: '正在安装依赖…', toVersion });
-    await runStep('npm', ['ci', '--omit=dev'], NPM_TIMEOUT_MS);
+    try {
+      await runStep('npm', ['ci', '--omit=dev'], NPM_TIMEOUT_MS);
+    } catch (err) {
+      appendLog(`依赖安装失败：${err.message}`);
+      writeStatus({ step: 'rolling_back', message: '依赖安装失败，正在回滚…' });
+      const rolledBack = await rollback(fromVersion);
+      const failErr = new Error(
+        rolledBack
+          ? `依赖安装失败，已回滚到原版本：${err.message}`
+          : `依赖安装失败，且回滚未完全成功，请手动处理：${err.message}`,
+      );
+      failErr.code = err.code || 'npm_failed';
+      throw failErr;
+    }
 
     appendLog(`代码与依赖已就绪：${fromVersion || '未知'} → ${toVersion || '未知'}`);
 
+    /* 触发任何重启方式前先落交接标记：pm2/systemctl 会先杀掉本进程，
+       之后的 done 写入没有机会执行。新进程读到 handing_over 即收尾为 done。 */
     writeStatus({
-      step: 'restarting',
+      step: 'handing_over',
       message: '正在重启服务…',
       fromVersion,
       toVersion,
     });
 
+    /* 更新工作已完成，锁的使命结束。必须在触发重启前释放：execve 会保留
+       PID，若把锁带到新进程，会被当成「正在更新」的活锁再阻塞 15 分钟。 */
+    releaseLock();
+
     try {
       const mode = await restartService();
       appendLog(`更新完成，重启方式：${mode}`);
-      /* selfRestart 走 execve，本进程即将不复存在：状态由 selfRestart 写入
-         handing_over，新进程启动时 reconcileStatus 收尾为 done。
-         其余模式由外部管理器重启进程，这里直接写终态作为交接记录。 */
+      /* 进程存活时（自定义 RESTART_COMMAND 未杀当前进程，或 pm2 抢跑前
+         代码恰好执行到）直接写终态作为确认；进程已退出则由新进程 reconcile。 */
       if (mode !== 'exec') {
         writeStatus({
           status: 'done',
@@ -592,6 +696,7 @@ async function runUpdate(fromVersion) {
     appendLog(`更新失败：${err.message}`);
   } finally {
     inProgress = false;
+    releaseLock();
   }
 }
 
@@ -604,6 +709,12 @@ function startUpdate() {
   if (!isGitRepo()) {
     const err = new Error('部署目录不是 Git 仓库，无法自动更新');
     err.code = 'no_git';
+    throw err;
+  }
+  // 单进程靠 inProgress，跨进程（pm2 cluster / 多实例）靠文件锁
+  if (!tryAcquireLock()) {
+    const err = new Error('已有更新任务正在进行，请稍候');
+    err.code = 'busy';
     throw err;
   }
 
@@ -642,4 +753,6 @@ module.exports = {
   getStatus,
   startUpdate,
   setHttpCloser,
+  // 仅供单元测试使用的内部实现
+  _internal: { reconcileStatus, findUntrackedCollisions, tryAcquireLock, releaseLock },
 };
