@@ -86,9 +86,14 @@ function setSessionCookie(res, token) {
   });
 }
 
+/*
+ * 移动端无法依赖 httpOnly Cookie，改为携带同一枚签名会话令牌：
+ *   Authorization: Bearer <token>
+ * 与 Cookie 共用 createToken/verify，密码变更会通过会话版本使旧令牌失效。
+ */
 function isAuthed(req) {
   if (!auth.isEnabled()) return true;
-  return !!auth.verify(req.cookies?.[auth.COOKIE_NAME]);
+  return !!auth.verify(auth.extractToken(req));
 }
 
 function requireAuth(req, res, next) {
@@ -120,13 +125,27 @@ app.post('/api/login', (req, res) => {
     recordFailure(ip);
     return res.status(401).json({ error: 'bad_credentials', message: '用户名或密码错误' });
   }
-  setSessionCookie(res, auth.createToken());
-  res.json({ ok: true });
+  const token = auth.createToken();
+  setSessionCookie(res, token);
+  res.json({ ok: true, token, expiresInMs: auth.SESSION_TTL_MS });
 });
 
 app.post('/api/logout', (req, res) => {
   res.clearCookie(auth.COOKIE_NAME, { path: '/' });
   res.json({ ok: true });
+});
+
+/* 移动端一次性拉取全量快照：任务树 + 回收站 + 会话相关配置，减少往返请求 */
+app.get('/api/sync', requireAuth, (req, res) => {
+  res.json({
+    serverTime: new Date().toISOString(),
+    tasks: store.listTasks(),
+    trash: store.listTrash(),
+    retentionDays: store.RETENTION_DAYS,
+    maxUploadMb: MAX_UPLOAD_MB,
+    maxR2UploadMb: MAX_R2_UPLOAD_MB,
+    r2Enabled: objectStore.isConfigured(),
+  });
 });
 
 app.get('/api/account', requireAuth, (req, res) => {
@@ -138,8 +157,10 @@ app.put('/api/account', requireAuth, (req, res) => {
   const { username, currentPassword, newPassword } = req.body || {};
   try {
     const account = auth.changeAccount({ username, currentPassword, newPassword });
-    setSessionCookie(res, auth.createToken());
-    res.json({ ok: true, username: account.username });
+    // 改密会使会话版本变化，旧令牌立即失效，因此这里签发并下发给移动端新令牌
+    const token = auth.createToken();
+    setSessionCookie(res, token);
+    res.json({ ok: true, username: account.username, token, expiresInMs: auth.SESSION_TTL_MS });
   } catch (err) {
     res.status(400).json({ error: err.code || 'update_failed', message: err.message });
   }

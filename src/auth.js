@@ -105,6 +105,21 @@ function createToken() {
   return sign({ exp: Date.now() + SESSION_TTL_MS, v: sessionVersion() });
 }
 
+/*
+ * 统一提取会话令牌：优先 Cookie（Web），回退 Authorization: Bearer（移动端）。
+ * 接受 Express req 或仅含 headers 的普通对象，便于单元测试。
+ */
+function extractToken(req) {
+  if (!req) return '';
+  const cookieToken = req.cookies?.[COOKIE_NAME];
+  if (cookieToken) return String(cookieToken);
+  const header = req.get
+    ? req.get('authorization')
+    : req.headers?.authorization;
+  const match = /^Bearer\s+(.+)$/i.exec(String(header || '').trim());
+  return match ? match[1].trim() : '';
+}
+
 function changeAccount({ username, currentPassword, newPassword }) {
   const account = getAccount();
   if (!account) {
@@ -161,6 +176,7 @@ module.exports = {
   changeAccount,
   getAccount,
   createToken,
+  extractToken,
   verify,
   COOKIE_NAME,
   SESSION_TTL_MS,
