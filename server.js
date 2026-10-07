@@ -7,6 +7,7 @@ process.removeAllListeners('warning');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { Readable } = require('node:stream');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
@@ -357,21 +358,7 @@ const INLINE_TYPES = [
   /^application\/json$/,
 ];
 
-app.get('/api/attachments/:id', requireAuth, (req, res) => {
-  const att = store.getAttachment(req.params.id);
-  if (!att) return res.status(404).json({ error: 'not_found' });
-  if ((att.storage || 'local') === 'r2') {
-    const url = objectStore.publicUrl(att.stored_name);
-    if (!url) return res.status(500).json({ error: 'r2_not_configured' });
-    return res.redirect(302, url);
-  }
-  const filePath = path.join(UPLOAD_DIR, att.stored_name);
-  if (!fs.existsSync(filePath)) {
-    return res.status(410).json({ error: 'file_missing' });
-  }
-  const inline =
-    req.query.inline === '1' &&
-    INLINE_TYPES.some((re) => re.test(att.mime_type || ''));
+function setAttachmentHeaders(res, att, inline) {
   res.setHeader('Content-Type', att.mime_type || 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader(
@@ -380,6 +367,61 @@ app.get('/api/attachments/:id', requireAuth, (req, res) => {
       att.original_name,
     )}`,
   );
+}
+
+function pipeR2Body(body, res) {
+  if (!body) {
+    res.status(502).json({ error: 'r2_body_missing' });
+    return;
+  }
+  if (typeof body.pipe === 'function') {
+    body.on('error', (err) => res.destroy(err));
+    body.pipe(res);
+    return;
+  }
+  if (typeof body.transformToWebStream === 'function') {
+    Readable.fromWeb(body.transformToWebStream())
+      .on('error', (err) => res.destroy(err))
+      .pipe(res);
+    return;
+  }
+  res.status(502).json({ error: 'r2_stream_unsupported' });
+}
+
+app.get('/api/attachments/:id', requireAuth, async (req, res) => {
+  const att = store.getAttachment(req.params.id);
+  if (!att) return res.status(404).json({ error: 'not_found' });
+  const inline =
+    req.query.inline === '1' &&
+    INLINE_TYPES.some((re) => re.test(att.mime_type || ''));
+  if ((att.storage || 'local') === 'r2') {
+    if (!objectStore.isConfigured()) {
+      return res.status(500).json({ error: 'r2_not_configured' });
+    }
+    try {
+      const object = await objectStore.getObject(att.stored_name);
+      setAttachmentHeaders(res, att, inline);
+      if (object.contentType) {
+        res.setHeader('Content-Type', object.contentType);
+      }
+      if (object.contentLength != null) {
+        res.setHeader('Content-Length', String(object.contentLength));
+      }
+      return pipeR2Body(object.body, res);
+    } catch (err) {
+      if (err && err.name === 'NoSuchKey') {
+        return res.status(410).json({ error: 'file_missing' });
+      }
+      return res
+        .status(502)
+        .json({ error: 'r2_fetch_failed', message: err?.message || '获取云端附件失败' });
+    }
+  }
+  const filePath = path.join(UPLOAD_DIR, att.stored_name);
+  if (!fs.existsSync(filePath)) {
+    return res.status(410).json({ error: 'file_missing' });
+  }
+  setAttachmentHeaders(res, att, inline);
   fs.createReadStream(filePath).pipe(res);
 });
 

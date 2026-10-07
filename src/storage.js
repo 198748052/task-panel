@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   DeleteObjectCommand,
   HeadBucketCommand,
 } = require('@aws-sdk/client-s3');
@@ -220,6 +221,20 @@ async function deleteObject(key) {
   );
 }
 
+async function getObject(key) {
+  const { cfg } = resolveConfig();
+  const out = await clientFor(cfg).send(
+    new GetObjectCommand({ Bucket: cfg.bucket, Key: key }),
+  );
+  return {
+    body: out.Body,
+    contentType: out.ContentType || null,
+    contentLength: out.ContentLength ?? null,
+    etag: out.ETag || null,
+    lastModified: out.LastModified || null,
+  };
+}
+
 function publicUrl(key) {
   const { cfg } = resolveConfig();
   if (!cfg.publicBaseUrl || !key) return null;
@@ -233,6 +248,7 @@ module.exports = {
   testConfig,
   makeKey,
   putObject,
+  getObject,
   deleteObject,
   publicUrl,
 };
