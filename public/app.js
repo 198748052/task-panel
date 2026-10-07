@@ -1643,11 +1643,9 @@ el.board.addEventListener('dragover', (e) => {
   }
 });
 
-el.board.addEventListener('dragend', async () => {
-  const draggingNode = el.board.querySelector('.node-row.dragging');
-  if (draggingNode) {
-    draggingNode.classList.remove('dragging');
-    const card = draggingNode.closest('.card');
+async function commitReorder(draggingEl) {
+  if (draggingEl.classList.contains('node-row')) {
+    const card = draggingEl.closest('.card');
     const ids = [...card.querySelectorAll('.node-row')].map((r) =>
       Number(r.dataset.id),
     );
@@ -1659,9 +1657,7 @@ el.board.addEventListener('dragend', async () => {
     }
     return;
   }
-  const draggingCard = el.board.querySelector('.card.dragging');
-  if (draggingCard) {
-    draggingCard.classList.remove('dragging');
+  if (draggingEl.classList.contains('card')) {
     const ids = [...el.board.querySelectorAll('.card')].map((c) =>
       Number(c.dataset.id),
     );
@@ -1672,7 +1668,163 @@ el.board.addEventListener('dragend', async () => {
       toast(err.message);
     }
   }
+}
+
+el.board.addEventListener('dragend', async () => {
+  const draggingNode = el.board.querySelector('.node-row.dragging');
+  if (draggingNode) {
+    draggingNode.classList.remove('dragging');
+    await commitReorder(draggingNode);
+    return;
+  }
+  const draggingCard = el.board.querySelector('.card.dragging');
+  if (draggingCard) {
+    draggingCard.classList.remove('dragging');
+    await commitReorder(draggingCard);
+  }
 });
+
+/*
+ * 移动端排序：HTML5 拖拽在触屏浏览器中不触发，改用「长按进入拖拽」。
+ * 仅在长按激活后拦截 touchmove 阻止页面滚动；普通点按仍会触发点击事件。
+ */
+const TOUCH_DRAG_DELAY = 320;
+const TOUCH_DRAG_THRESHOLD = 10;
+let touchDrag = null;
+let suppressClickUntil = 0;
+
+function touchDragRegion(origin) {
+  const nodeRow = origin.closest('.node-row');
+  if (nodeRow) {
+    if (origin.closest('input, textarea, .node-del')) return null;
+    return { kind: 'node', el: nodeRow };
+  }
+  const card = origin.closest('.card');
+  if (card && origin.closest('.card-head')) {
+    if (origin.closest('button, a, input, textarea')) return null;
+    return { kind: 'card', el: card };
+  }
+  return null;
+}
+
+function clearTouchDrag() {
+  if (!touchDrag) return;
+  clearTimeout(touchDrag.timer);
+  if (touchDrag.active) touchDrag.el.classList.remove('dragging');
+  touchDrag = null;
+}
+
+function pointTarget(x, y, selector, dragging) {
+  const prev = dragging.style.pointerEvents;
+  dragging.style.pointerEvents = 'none';
+  const under = document.elementFromPoint(x, y);
+  dragging.style.pointerEvents = prev;
+  return under ? under.closest(selector) : null;
+}
+
+function moveTouchDrag(x, y) {
+  const dragging = touchDrag.el;
+  if (dragging.classList.contains('node-row')) {
+    const target = pointTarget(x, y, '.node-row', dragging);
+    if (!target || target.closest('.card') !== dragging.closest('.card')) return;
+    const rect = target.getBoundingClientRect();
+    const after = y - rect.top > rect.height / 2;
+    target.parentNode.insertBefore(
+      dragging,
+      after ? target.nextSibling : target,
+    );
+    return;
+  }
+  const target = pointTarget(x, y, '.card', dragging);
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const after = x - rect.left > rect.width / 2;
+  el.board.insertBefore(dragging, after ? target.nextSibling : target);
+}
+
+el.board.addEventListener(
+  'touchstart',
+  (e) => {
+    if (e.touches.length !== 1) {
+      clearTouchDrag();
+      return;
+    }
+    const region = touchDragRegion(e.target);
+    if (!region) return;
+    const t = e.touches[0];
+    touchDrag = {
+      ...region,
+      x: t.clientX,
+      y: t.clientY,
+      active: false,
+      timer: setTimeout(() => {
+        if (!touchDrag) return;
+        touchDrag.active = true;
+        touchDrag.el.classList.add('dragging');
+        if (navigator.vibrate) navigator.vibrate(10);
+      }, TOUCH_DRAG_DELAY),
+    };
+  },
+  { passive: true },
+);
+
+el.board.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!touchDrag) return;
+    const t = e.touches[0];
+    if (!touchDrag.active) {
+      if (!t) return;
+      if (
+        Math.hypot(t.clientX - touchDrag.x, t.clientY - touchDrag.y) >
+        TOUCH_DRAG_THRESHOLD
+      ) {
+        clearTouchDrag();
+      }
+      return;
+    }
+    e.preventDefault();
+    if (t) moveTouchDrag(t.clientX, t.clientY);
+  },
+  { passive: false },
+);
+
+el.board.addEventListener('touchend', async () => {
+  if (!touchDrag) return;
+  clearTimeout(touchDrag.timer);
+  const drag = touchDrag;
+  touchDrag = null;
+  if (!drag.active) return;
+  suppressClickUntil = Date.now() + 400;
+  drag.el.classList.remove('dragging');
+  await commitReorder(drag.el);
+});
+
+el.board.addEventListener('touchcancel', () => {
+  if (!touchDrag) return;
+  clearTimeout(touchDrag.timer);
+  const { active, el: dragEl } = touchDrag;
+  touchDrag = null;
+  if (active) {
+    dragEl.classList.remove('dragging');
+    refresh();
+  }
+});
+
+el.board.addEventListener('contextmenu', (e) => {
+  if (touchDrag && touchDrag.active) e.preventDefault();
+});
+
+el.board.addEventListener(
+  'click',
+  (e) => {
+    if (Date.now() < suppressClickUntil) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  },
+  true,
+);
 
 /* -------------------------------- init -------------------------------- */
 
