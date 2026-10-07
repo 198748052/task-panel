@@ -149,8 +149,6 @@
 **/ios/.generated/
 **/android/**/generated/
 **/android/.gradle/
-**/android/gradlew
-**/android/gradlew.bat
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/**/flutter_*.json
