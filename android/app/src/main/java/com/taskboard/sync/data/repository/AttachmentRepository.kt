@@ -8,6 +8,7 @@ import com.taskboard.sync.data.local.entity.AttachmentEntity
 import com.taskboard.sync.data.remote.ApiErrorKind
 import com.taskboard.sync.data.remote.ApiException
 import com.taskboard.sync.data.remote.ApiHolder
+import com.taskboard.sync.data.remote.ProgressRequestBody
 import com.taskboard.sync.data.remote.TokenStore
 import com.taskboard.sync.data.remote.dto.RenameAttachmentRequest
 import com.taskboard.sync.data.remote.safeApiCall
@@ -37,6 +38,7 @@ class AttachmentRepository(
         uri: Uri,
         fileName: String,
         mimeType: String,
+        onProgress: (Float) -> Unit = {},
     ): List<AttachmentEntity> {
         val node = nodeDao.getByLocalId(nodeLocalId)
             ?: throw ApiException(ApiErrorKind.NOT_FOUND, "节点不存在")
@@ -50,10 +52,11 @@ class AttachmentRepository(
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw ApiException(ApiErrorKind.UNKNOWN, "无法读取所选文件")
 
+                val fileBody = tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData(
                     "files",
                     fileName,
-                    tempFile.asRequestBody(mimeType.toMediaTypeOrNull()),
+                    ProgressRequestBody(fileBody, onProgress),
                 )
                 val response = safeApiCall {
                     api().uploadAttachment(nodeRemoteId, storage, listOf(part))

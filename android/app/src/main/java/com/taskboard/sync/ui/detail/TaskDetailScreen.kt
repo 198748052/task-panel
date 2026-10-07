@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,37 +14,49 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -80,6 +93,10 @@ class TaskDetailViewModel(
     var error by mutableStateOf<String?>(null)
         private set
     var sessionExpired by mutableStateOf(false)
+        private set
+    var uploading by mutableStateOf(false)
+        private set
+    var uploadProgress by mutableStateOf(0f)
         private set
 
     init {
@@ -177,15 +194,21 @@ class TaskDetailViewModel(
                     error = "文件超过 ${limitMb}MB 限制"
                     return@launch
                 }
+                uploading = true
+                uploadProgress = 0f
                 attachmentRepository.upload(
                     nodeLocalId = nodeLocalId,
                     storage = storage,
                     uri = uri,
                     fileName = FileUtil.queryDisplayName(appContext, uri),
                     mimeType = FileUtil.queryMimeType(appContext, uri),
+                    onProgress = { uploadProgress = it.coerceIn(0f, 1f) },
                 )
             } catch (e: ApiException) {
                 handle(e)
+            } finally {
+                uploading = false
+                uploadProgress = 0f
             }
         }
     }
@@ -253,11 +276,11 @@ fun TaskDetailScreen(
         if (vm.sessionExpired) onSessionExpired()
     }
 
-    var showAddNode by mutableStateOf(false)
-    var editingNode by mutableStateOf<NodeEntity?>(null)
-    var editingAttachment by mutableStateOf<AttachmentEntity?>(null)
-    var pendingUpload by mutableStateOf<Pair<String, Uri>?>(null)
-    var showStorageChoice by mutableStateOf(false)
+    var showAddNode by remember { mutableStateOf(false) }
+    var editingNode by remember { mutableStateOf<NodeEntity?>(null) }
+    var editingAttachment by remember { mutableStateOf<AttachmentEntity?>(null) }
+    var pendingUpload by remember { mutableStateOf<Pair<String, Uri>?>(null) }
+    var showStorageChoice by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -317,9 +340,14 @@ fun TaskDetailScreen(
     val currentTask = vm.task
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(currentTask?.task?.title ?: "任务") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -335,7 +363,11 @@ fun TaskDetailScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddNode = true }) {
+            FloatingActionButton(
+                onClick = { showAddNode = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
                 Icon(Icons.Filled.Add, contentDescription = "新建节点")
             }
         },
@@ -356,6 +388,9 @@ fun TaskDetailScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (vm.uploading) {
+                UploadProgressBanner(progress = vm.uploadProgress)
+            }
             if (currentTask == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -367,7 +402,10 @@ fun TaskDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 if (currentTask.task.description.isNotBlank()) {
                                     Text(
@@ -389,7 +427,10 @@ fun TaskDetailScreen(
                     }
                     items(currentTask.nodes, key = { it.node.localId }) { nodeWithAttachments ->
                         val node = nodeWithAttachments.node
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(
@@ -421,27 +462,50 @@ fun TaskDetailScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                nodeWithAttachments.attachments.forEach { attachment ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = attachment.originalName,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        Text(
-                                            text = FileUtil.humanSize(attachment.size),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        TextButton(onClick = { vm.download(attachment) }) { Text("下载") }
-                                        IconButton(onClick = { editingAttachment = attachment }) {
-                                            Icon(Icons.Filled.Edit, contentDescription = "重命名")
-                                        }
-                                        IconButton(onClick = { vm.deleteAttachment(attachment.localId) }) {
-                                            Icon(Icons.Filled.Delete, contentDescription = "删除附件")
+                                if (nodeWithAttachments.attachments.isNotEmpty()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = "附件（${nodeWithAttachments.attachments.size}）",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    nodeWithAttachments.attachments.forEach { attachment ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { vm.download(attachment) }
+                                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.AttachFile,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = attachment.originalName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Text(
+                                                text = FileUtil.humanSize(attachment.size),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            IconButton(onClick = { vm.download(attachment) }) {
+                                                Icon(Icons.Filled.Download, contentDescription = "下载")
+                                            }
+                                            IconButton(onClick = { editingAttachment = attachment }) {
+                                                Icon(Icons.Filled.Edit, contentDescription = "重命名")
+                                            }
+                                            IconButton(onClick = { vm.deleteAttachment(attachment.localId) }) {
+                                                Icon(Icons.Filled.Delete, contentDescription = "删除附件")
+                                            }
                                         }
                                     }
                                 }
@@ -495,8 +559,8 @@ private fun NodeEditDialog(
     onConfirm: (String, String) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
-    var title by mutableStateOf(initialTitle)
-    var content by mutableStateOf(initialContent)
+    var title by remember(initialTitle, initialContent) { mutableStateOf(initialTitle) }
+    var content by remember(initialTitle, initialContent) { mutableStateOf(initialContent) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -540,7 +604,7 @@ private fun RenameDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var name by mutableStateOf(initial)
+    var name by remember(initial) { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("重命名附件") },
@@ -562,4 +626,36 @@ private fun RenameDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
+}
+
+@Composable
+private fun UploadProgressBanner(progress: Float) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "正在上传附件",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 }

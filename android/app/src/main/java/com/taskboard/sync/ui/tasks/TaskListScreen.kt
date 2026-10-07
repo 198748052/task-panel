@@ -1,22 +1,34 @@
 package com.taskboard.sync.ui.tasks
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -25,16 +37,22 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,6 +65,8 @@ import com.taskboard.sync.data.repository.TaskRepository
 import com.taskboard.sync.data.sync.SyncScheduler
 import com.taskboard.sync.di.AppContainer
 import com.taskboard.sync.ui.common.AppViewModelFactory
+import com.taskboard.sync.ui.theme.TaskColorOptions
+import com.taskboard.sync.ui.theme.taskAccent
 import kotlinx.coroutines.launch
 
 class TaskListViewModel(
@@ -129,7 +149,7 @@ fun TaskListScreen(
     onSessionExpired: () -> Unit,
 ) {
     val vm: TaskListViewModel = viewModel(factory = AppViewModelFactory(container))
-    var showCreate by mutableStateOf(false)
+    var showCreate by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(vm.sessionExpired) {
         if (vm.sessionExpired) onSessionExpired()
@@ -145,11 +165,18 @@ fun TaskListScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("任务") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                 actions = {
-                    IconButton(onClick = { onOpenTrash() }) { Text("回收站") }
+                    IconButton(onClick = { onOpenTrash() }) {
+                        Icon(Icons.Filled.DeleteOutline, contentDescription = "回收站")
+                    }
                     IconButton(onClick = { onOpenSettings() }) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
                     }
@@ -160,7 +187,11 @@ fun TaskListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) {
+            FloatingActionButton(
+                onClick = { showCreate = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
                 Icon(Icons.Filled.Add, contentDescription = "新建任务")
             }
         },
@@ -184,8 +215,8 @@ fun TaskListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(vm.tasks, key = { it.task.localId }) { item ->
                         TaskCard(
@@ -203,57 +234,112 @@ fun TaskListScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskCard(item: TaskWithNodes, onClick: () -> Unit, onDelete: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+    val accent = taskAccent(item.task.color)
+    val attachmentCount = item.nodes.sumOf { it.attachments.size }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(accent),
+            )
+            Column(modifier = Modifier.weight(1f).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = item.task.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     if (item.task.archived) {
-                        Spacer(Modifier.height(0.dp))
-                        Text(
-                            text = "  已归档",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Spacer(Modifier.width(8.dp))
+                        StatusBadge(
+                            text = "已归档",
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         )
                     }
                     if (item.task.dirty) {
-                        Text(
-                            text = "  待同步",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                        Spacer(Modifier.width(8.dp))
+                        StatusBadge(
+                            text = "待同步",
+                            contentColor = accent,
+                            containerColor = accent.copy(alpha = 0.12f),
                         )
                     }
                 }
                 if (item.task.description.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = item.task.description,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = "节点 ${item.nodes.size}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MetaItem(Icons.Filled.Layers, "${item.nodes.size} 个节点")
+                    Spacer(Modifier.width(16.dp))
+                    MetaItem(Icons.Filled.AttachFile, "$attachmentCount 个附件")
+                }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除")
+            IconButton(onClick = onDelete, modifier = Modifier.align(Alignment.Top)) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
 @Composable
+private fun StatusBadge(text: String, contentColor: Color, containerColor: Color) {
+    Surface(color = containerColor, shape = RoundedCornerShape(6.dp)) {
+        Text(
+            text = text,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun MetaItem(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun Banner(text: String) {
-    androidx.compose.material3.Surface(
+    Surface(
         color = MaterialTheme.colorScheme.tertiaryContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -261,6 +347,7 @@ private fun Banner(text: String) {
             text = text,
             modifier = Modifier.padding(12.dp),
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
     }
 }
@@ -270,8 +357,9 @@ private fun CreateTaskDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
-    var title by mutableStateOf("")
-    var description by mutableStateOf("")
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var color by remember { mutableStateOf("blue") }
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -290,11 +378,27 @@ private fun CreateTaskDialog(
                     onValueChange = { description = it },
                     label = { Text("描述") },
                 )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "颜色",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TaskColorOptions.forEach { option ->
+                        ColorDot(
+                            color = taskAccent(option),
+                            selected = option == color,
+                            onClick = { color = option },
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(title, description, "blue") },
+                onClick = { onConfirm(title, description, color) },
                 enabled = title.isNotBlank(),
             ) { Text("创建") }
         },
@@ -302,4 +406,16 @@ private fun CreateTaskDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
+}
+
+@Composable
+private fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = color,
+        shape = RoundedCornerShape(50),
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface) else null,
+        modifier = Modifier
+            .size(24.dp)
+            .clickable(onClick = onClick),
+    ) {}
 }
