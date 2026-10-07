@@ -412,6 +412,22 @@
 
     <div id="node-tooltip" class="node-tooltip hidden" role="tooltip"></div>
 
+    <!-- 任务详情页 -->
+    <div id="task-detail" class="detail-view hidden" aria-hidden="true">
+      <div class="detail-head">
+        <button id="detail-back" class="icon-btn" title="返回">←</button>
+        <div class="detail-title-wrap">
+          <h2 id="detail-title" class="detail-title"></h2>
+          <p id="detail-desc" class="detail-desc"></p>
+        </div>
+        <div class="detail-actions">
+          <button id="detail-edit-task" class="btn btn-small btn-ghost">编辑任务</button>
+          <button id="detail-add-node" class="btn btn-small btn-primary">+ 添加节点</button>
+        </div>
+      </div>
+      <div id="detail-body" class="detail-body"></div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
 
     <script src="/app.js"></script>

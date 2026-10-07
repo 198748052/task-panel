@@ -27,6 +27,9 @@ const state = {
   composer: null,
   expandedTasks: new Set(),
   trash: [],
+  detailTaskId: null,
+  expandedNodes: new Set(),
+  detailComposer: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -122,6 +125,13 @@ const el = {
   accountMessage: $('#account-message'),
   toast: $('#toast'),
   nodeTooltip: $('#node-tooltip'),
+  detailView: $('#task-detail'),
+  detailBack: $('#detail-back'),
+  detailTitle: $('#detail-title'),
+  detailDesc: $('#detail-desc'),
+  detailEditTask: $('#detail-edit-task'),
+  detailAddNode: $('#detail-add-node'),
+  detailBody: $('#detail-body'),
 };
 
 /* ------------------------------- helpers ------------------------------ */
@@ -226,6 +236,16 @@ function findNode(nodeId) {
   return null;
 }
 
+function findAttachment(attId) {
+  for (const task of state.tasks) {
+    for (const node of task.nodes) {
+      const att = node.attachments.find((a) => a.id === Number(attId));
+      if (att) return { task, node, att };
+    }
+  }
+  return null;
+}
+
 /* -------------------------------- auth -------------------------------- */
 
 function showLogin() {
@@ -312,6 +332,7 @@ async function refresh() {
   const data = await api('GET', '/api/tasks');
   state.tasks = data.tasks;
   renderBoard();
+  if (state.detailTaskId) renderDetail();
 }
 
 function visibleTasks() {
@@ -377,6 +398,7 @@ function cardHtml(task) {
   const footHtml = composerOpen
     ? composerHtml()
     : `<div class="card-foot">
+         <button type="button" class="card-detail-trigger">查看详情</button>
          <button type="button" class="add-node-trigger">+ 添加节点</button>
        </div>`;
   return `
@@ -426,7 +448,6 @@ function nodeRowHtml(node, index) {
             )}">📎 ${count}</span>`
           : ''
       }
-      <button type="button" class="node-del" title="删除节点">✕</button>
     </li>
   `;
 }
@@ -661,6 +682,10 @@ el.board.addEventListener('click', async (e) => {
     return;
   }
 
+  if (e.target.closest('.card-detail-trigger')) {
+    openDetail(taskId);
+    return;
+  }
   if (e.target.closest('.add-node-trigger')) {
     openComposer(taskId);
     return;
@@ -687,18 +712,8 @@ el.board.addEventListener('click', async (e) => {
   }
 
   const nodeRow = e.target.closest('.node-row');
-  if (nodeRow) {
-    const nodeId = Number(nodeRow.dataset.id);
-    if (e.target.closest('.node-del')) {
-      if (!confirm('确定将该节点及其附件移入回收站吗？')) return;
-      await api('DELETE', `/api/nodes/${nodeId}`);
-      await refresh();
-      toast('节点已移入回收站');
-      return;
-    }
-    if (e.target.closest('.node-name')) {
-      openDrawer(nodeId);
-    }
+  if (nodeRow && e.target.closest('.node-name')) {
+    openDrawer(Number(nodeRow.dataset.id));
   }
 });
 
@@ -804,6 +819,7 @@ document.addEventListener('keydown', (e) => {
   else if (!el.taskModal.classList.contains('hidden')) closeTaskModal();
   else if (!el.drawer.classList.contains('hidden')) closeDrawer();
   else if (state.composer) closeComposer();
+  else if (state.detailTaskId) closeDetail();
 });
 
 let saveTimer = null;
@@ -863,6 +879,41 @@ function attachmentLimit() {
   return selectedStorage() === 'r2' ? state.maxR2UploadMb : state.maxUploadMb;
 }
 
+function attachmentItemHtml(a) {
+  const kind = previewKind(a.mime_type);
+  const isR2 = a.storage === 'r2' && a.url;
+  const base = isR2 ? a.url : `/api/attachments/${a.id}`;
+  const inlineHref = isR2 ? a.url : `${base}?inline=1`;
+  const thumb =
+    kind === 'image'
+      ? `<img class="attach-thumb" src="${inlineHref}" alt="" loading="lazy" />`
+      : `<span class="attach-thumb">${fileIcon(a.mime_type)}</span>`;
+  const nameCell = kind
+    ? `<button type="button" class="attach-name attach-preview" data-id="${
+        a.id
+      }" title="点击预览">${escapeHtml(a.original_name)}</button>`
+    : `<a class="attach-name" href="${base}" download title="${escapeHtml(
+        a.original_name,
+      )}">${escapeHtml(a.original_name)}</a>`;
+  const badge = `<span class="attach-badge" title="存储位置">${
+    isR2 ? 'R2' : '本地'
+  }</span>`;
+  return `
+    <li class="attach-item" data-id="${a.id}">
+      ${thumb}
+      <div class="attach-info">
+        ${nameCell}
+        <span class="attach-size">${formatSize(a.size)} · ${formatDate(
+          a.created_at,
+        )} ${badge}</span>
+      </div>
+      <button type="button" class="icon-btn attach-rename" title="重命名">✎</button>
+      <a class="btn btn-small btn-ghost" href="${base}" download>下载</a>
+      <button type="button" class="icon-btn attach-del" title="移入回收站">✕</button>
+    </li>
+  `;
+}
+
 function renderAttachments(list) {
   const total = list.reduce((s, a) => s + (Number(a.size) || 0), 0);
   const limit = formatLimitMb(attachmentLimit());
@@ -874,42 +925,7 @@ function renderAttachments(list) {
       '<li class="card-empty" style="padding:6px 2px">暂无附件</li>';
     return;
   }
-  el.attachList.innerHTML = list
-    .map((a) => {
-      const kind = previewKind(a.mime_type);
-      const isR2 = a.storage === 'r2' && a.url;
-      const base = isR2 ? a.url : `/api/attachments/${a.id}`;
-      const inlineHref = isR2 ? a.url : `${base}?inline=1`;
-      const thumb =
-        kind === 'image'
-          ? `<img class="attach-thumb" src="${inlineHref}" alt="" loading="lazy" />`
-          : `<span class="attach-thumb">${fileIcon(a.mime_type)}</span>`;
-      const nameCell = kind
-        ? `<button type="button" class="attach-name attach-preview" data-id="${
-            a.id
-          }" title="点击预览">${escapeHtml(a.original_name)}</button>`
-        : `<a class="attach-name" href="${base}" download title="${escapeHtml(
-            a.original_name,
-          )}">${escapeHtml(a.original_name)}</a>`;
-      const badge = `<span class="attach-badge" title="存储位置">${
-        isR2 ? 'R2' : '本地'
-      }</span>`;
-      return `
-        <li class="attach-item" data-id="${a.id}">
-          ${thumb}
-          <div class="attach-info">
-            ${nameCell}
-            <span class="attach-size">${formatSize(a.size)} · ${formatDate(
-              a.created_at,
-            )} ${badge}</span>
-          </div>
-          <button type="button" class="icon-btn attach-rename" title="重命名">✎</button>
-          <a class="btn btn-small btn-ghost" href="${base}" download>下载</a>
-          <button type="button" class="icon-btn attach-del" title="移入回收站">✕</button>
-        </li>
-      `;
-    })
-    .join('');
+  el.attachList.innerHTML = list.map(attachmentItemHtml).join('');
 }
 
 function currentNode() {
@@ -946,9 +962,9 @@ el.attachList.addEventListener('click', async (e) => {
 });
 
 async function renameAttachment(id) {
-  const node = currentNode();
-  const att = node?.attachments.find((a) => a.id === id);
-  if (!att) return;
+  const found = findAttachment(id);
+  if (!found) return;
+  const att = found.att;
   const next = prompt('附件名称', att.original_name);
   if (next === null) return;
   const name = next.trim();
@@ -958,7 +974,8 @@ async function renameAttachment(id) {
       original_name: name,
     });
     att.original_name = res.attachment.original_name;
-    renderAttachments(node.attachments);
+    if (state.openNodeId === found.node.id) renderAttachments(found.node.attachments);
+    if (state.detailTaskId) renderDetail();
     toast('已重命名');
   } catch (err) {
     toast(err.message);
@@ -1600,7 +1617,7 @@ el.board.addEventListener('dragstart', (e) => {
   dragOrigin = null;
   const nodeRow = e.target.closest('.node-row');
   if (nodeRow) {
-    if (origin && origin.closest('button, input, textarea, a, .node-del')) {
+    if (origin && origin.closest('button, input, textarea, a')) {
       e.preventDefault();
       return;
     }
@@ -1696,7 +1713,7 @@ let suppressClickUntil = 0;
 function touchDragRegion(origin) {
   const nodeRow = origin.closest('.node-row');
   if (nodeRow) {
-    if (origin.closest('input, textarea, .node-del')) return null;
+    if (origin.closest('input, textarea')) return null;
     return { kind: 'node', el: nodeRow };
   }
   const card = origin.closest('.card');
@@ -1825,6 +1842,429 @@ el.board.addEventListener(
   },
   true,
 );
+
+/* ---------------------------- task detail ---------------------------- */
+
+const detailSaveTimers = new Map();
+
+function detailTask() {
+  return state.detailTaskId ? findTask(state.detailTaskId) : null;
+}
+
+function openDetail(taskId) {
+  const task = findTask(taskId);
+  if (!task) return;
+  state.detailTaskId = taskId;
+  state.detailComposer = null;
+  state.expandedNodes = new Set();
+  el.detailView.classList.remove('hidden');
+  el.detailView.setAttribute('aria-hidden', 'false');
+  renderDetail();
+}
+
+function closeDetail() {
+  state.detailTaskId = null;
+  state.detailComposer = null;
+  state.expandedNodes = new Set();
+  el.detailView.classList.add('hidden');
+  el.detailView.setAttribute('aria-hidden', 'true');
+}
+
+function renderDetail() {
+  const task = detailTask();
+  if (!task) {
+    closeDetail();
+    return;
+  }
+  el.detailTitle.textContent = task.title;
+  const desc = (task.description || '').trim();
+  el.detailDesc.textContent = desc;
+  el.detailDesc.classList.toggle('hidden', !desc);
+  const composer = state.detailComposer ? detailComposerHtml() : '';
+  const nodes = task.nodes.length
+    ? task.nodes.map((n, i) => detailNodeHtml(n, i)).join('')
+    : '<div class="detail-empty">暂无节点，点击右上角「+ 添加节点」创建</div>';
+  el.detailBody.innerHTML = composer + nodes;
+}
+
+function detailNodeHtml(node, index) {
+  const open = state.expandedNodes.has(node.id);
+  const count = node.attachments.length;
+  const size = node.attachments.reduce((s, a) => s + (Number(a.size) || 0), 0);
+  const badge = count
+    ? `<span class="node-badge" title="${count} 个附件 · ${formatSize(
+        size,
+      )}">📎 ${count}</span>`
+    : '';
+  let body = '';
+  if (open) {
+    const items = count
+      ? node.attachments.map(attachmentItemHtml).join('')
+      : '<li class="card-empty" style="padding:6px 2px">暂无附件</li>';
+    body = `
+      <div class="acc-body">
+        <label class="field-label">节点名称</label>
+        <input class="input detail-node-title" data-id="${node.id}" maxlength="160" value="${escapeHtml(
+          node.title,
+        )}" />
+        <label class="field-label">完成内容</label>
+        <textarea class="content-editor detail-node-content" data-id="${
+          node.id
+        }" placeholder="填写该节点完成的内容，支持多行文本">${escapeHtml(
+          node.content || '',
+        )}</textarea>
+        <div class="detail-save-hint" data-id="${node.id}"></div>
+        <div class="attach-section">
+          <div class="attach-head">
+            <span class="field-label">附件</span>
+            <label class="btn btn-small btn-ghost">
+              上传附件
+              <input type="file" class="detail-file-input" data-id="${
+                node.id
+              }" multiple hidden />
+            </label>
+          </div>
+          <div class="attach-meta">${
+            count ? `${count} 个附件 · 共 ${formatSize(size)}` : '暂无附件'
+          }</div>
+          <div class="storage-picker">
+            <span class="storage-label">存储位置</span>
+            <select class="composer-storage detail-storage" data-id="${
+              node.id
+            }">
+              <option value="local">本地</option>
+              <option value="r2"${state.r2Enabled ? '' : ' disabled'}>Cloudflare R2</option>
+            </select>
+          </div>
+          <div class="upload-progress detail-progress hidden" data-id="${
+            node.id
+          }">
+            <div class="upload-progress-track"><div class="upload-progress-bar"></div></div>
+            <span class="upload-progress-text"></span>
+          </div>
+          <ul class="attach-list">${items}</ul>
+        </div>
+        <div class="detail-node-actions">
+          <button type="button" class="btn btn-small btn-danger-ghost detail-node-del" data-id="${
+            node.id
+          }">删除节点</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <section class="acc-item${open ? ' open' : ''}" data-id="${node.id}">
+      <div class="acc-head" data-id="${node.id}">
+        <span class="acc-index">${index + 1}</span>
+        <span class="acc-title">${escapeHtml(node.title)}</span>
+        ${badge}
+        <span class="acc-chevron">›</span>
+      </div>
+      ${body}
+    </section>`;
+}
+
+function detailComposerHtml() {
+  const c = state.detailComposer;
+  const files = c.files.length
+    ? c.files
+        .map(
+          (f, i) => `
+      <li class="composer-file">
+        <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+        <span class="attach-size">${formatSize(f.size)}</span>
+        <button type="button" class="icon-btn detail-composer-file-del" data-index="${i}" title="移除">✕</button>
+      </li>`,
+        )
+        .join('')
+    : '';
+  return `
+    <div class="node-composer detail-composer">
+      <input type="text" class="composer-title detail-composer-title" placeholder="节点名称" maxlength="160" value="${escapeHtml(
+        c.title,
+      )}" />
+      <textarea class="composer-content detail-composer-content" placeholder="完成内容（可稍后补充）">${escapeHtml(
+        c.content,
+      )}</textarea>
+      <div class="composer-toolbar">
+        <label class="btn btn-small btn-ghost composer-upload">
+          添加附件
+          <input type="file" class="detail-composer-file" multiple hidden />
+        </label>
+        <select class="composer-storage detail-composer-storage" title="存储位置">
+          <option value="local">本地</option>
+          <option value="r2"${state.r2Enabled ? '' : ' disabled'}>R2</option>
+        </select>
+        <span class="attach-size">${
+          c.files.length ? `${c.files.length} 个文件` : ''
+        }</span>
+      </div>
+      <div class="upload-progress detail-composer-progress hidden">
+        <div class="upload-progress-track"><div class="upload-progress-bar"></div></div>
+        <span class="upload-progress-text"></span>
+      </div>
+      <ul class="composer-files">${files}</ul>
+      <div class="composer-actions">
+        <button type="button" class="btn btn-ghost btn-small detail-composer-cancel">取消</button>
+        <button type="button" class="btn btn-primary btn-small detail-composer-save">保存节点</button>
+      </div>
+    </div>`;
+}
+
+function openDetailComposer() {
+  state.detailComposer = { title: '', content: '', files: [] };
+  renderDetail();
+  const input = el.detailBody.querySelector('.detail-composer-title');
+  if (input) input.focus();
+}
+
+function setComposerDetailProgress(show, ratio, text) {
+  const box = el.detailBody.querySelector('.detail-composer-progress');
+  if (!box) return;
+  box.classList.toggle('hidden', !show);
+  const bar = box.querySelector('.upload-progress-bar');
+  const label = box.querySelector('.upload-progress-text');
+  if (bar) bar.style.width = `${Math.round((ratio || 0) * 100)}%`;
+  if (label) label.textContent = text || '';
+}
+
+async function saveDetailComposer() {
+  const c = state.detailComposer;
+  if (!c || !state.detailTaskId) return;
+  const title = c.title.trim();
+  if (!title) {
+    toast('请填写节点名称');
+    return;
+  }
+  const target =
+    el.detailBody.querySelector('.detail-composer-storage')?.value === 'r2'
+      ? 'r2'
+      : 'local';
+  try {
+    const res = await api('POST', `/api/tasks/${state.detailTaskId}/nodes`, {
+      title,
+      content: c.content,
+    });
+    if (c.files.length) {
+      setComposerDetailProgress(true, 0, '上传中 0%');
+      try {
+        await uploadWithProgress(
+          `/api/nodes/${res.node.id}/attachments?storage=${target}`,
+          c.files,
+          (ratio) =>
+            setComposerDetailProgress(
+              true,
+              ratio,
+              `上传中 ${Math.round(ratio * 100)}%`,
+            ),
+        );
+      } catch (err) {
+        toast(`节点已创建，但附件上传失败：${err.message}`);
+      } finally {
+        setComposerDetailProgress(false, 0, '');
+      }
+    }
+    state.detailComposer = null;
+    state.expandedNodes.add(res.node.id);
+    await refresh();
+    toast('节点已创建');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function scheduleDetailSave(nodeId) {
+  const hint = el.detailBody.querySelector(
+    `.detail-save-hint[data-id="${nodeId}"]`,
+  );
+  if (hint) hint.textContent = '编辑中…';
+  clearTimeout(detailSaveTimers.get(nodeId));
+  detailSaveTimers.set(
+    nodeId,
+    setTimeout(() => saveDetailNode(nodeId), 600),
+  );
+}
+
+async function saveDetailNode(nodeId) {
+  const found = findNode(nodeId);
+  if (!found) return;
+  const node = found.node;
+  try {
+    const res = await api('PATCH', `/api/nodes/${nodeId}`, {
+      title: (node.title || '').trim() || '未命名节点',
+      content: node.content || '',
+    });
+    node.title = res.node.title;
+    node.content = res.node.content;
+    const head = el.detailBody.querySelector(
+      `.acc-head[data-id="${nodeId}"] .acc-title`,
+    );
+    if (head) head.textContent = node.title;
+    const hint = el.detailBody.querySelector(
+      `.detail-save-hint[data-id="${nodeId}"]`,
+    );
+    if (hint) hint.textContent = `已保存 ${formatDate(new Date().toISOString())}`;
+  } catch (err) {
+    const hint = el.detailBody.querySelector(
+      `.detail-save-hint[data-id="${nodeId}"]`,
+    );
+    if (hint) hint.textContent = '保存失败';
+    toast(err.message);
+  }
+}
+
+function setDetailProgress(nodeId, show, ratio, text) {
+  const box = el.detailBody.querySelector(
+    `.detail-progress[data-id="${nodeId}"]`,
+  );
+  if (!box) return;
+  box.classList.toggle('hidden', !show);
+  const bar = box.querySelector('.upload-progress-bar');
+  const label = box.querySelector('.upload-progress-text');
+  if (bar) bar.style.width = `${Math.round((ratio || 0) * 100)}%`;
+  if (label) label.textContent = text || '';
+}
+
+async function detailUploadFiles(nodeId, files) {
+  if (!files.length) return;
+  const found = findNode(nodeId);
+  if (!found) return;
+  const storage =
+    el.detailBody.querySelector(`.detail-storage[data-id="${nodeId}"]`)?.value ===
+    'r2'
+      ? 'r2'
+      : 'local';
+  setDetailProgress(nodeId, true, 0, '上传中 0%');
+  try {
+    const res = await uploadWithProgress(
+      `/api/nodes/${nodeId}/attachments?storage=${storage}`,
+      files,
+      (ratio) =>
+        setDetailProgress(nodeId, true, ratio, `上传中 ${Math.round(ratio * 100)}%`),
+    );
+    found.node.attachments.push(...(res?.attachments || []));
+    toast(`已上传 ${res?.attachments?.length || 0} 个文件`);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    setDetailProgress(nodeId, false, 0, '');
+    renderDetail();
+  }
+}
+
+el.detailBack.addEventListener('click', closeDetail);
+el.detailEditTask.addEventListener('click', () => {
+  const task = detailTask();
+  if (task) openTaskModal(task);
+});
+el.detailAddNode.addEventListener('click', openDetailComposer);
+
+el.detailBody.addEventListener('click', async (e) => {
+  if (e.target.closest('.detail-composer-cancel')) {
+    state.detailComposer = null;
+    renderDetail();
+    return;
+  }
+  if (e.target.closest('.detail-composer-save')) {
+    await saveDetailComposer();
+    return;
+  }
+  if (e.target.closest('.detail-composer-file-del')) {
+    const index = Number(
+      e.target.closest('.detail-composer-file-del').dataset.index,
+    );
+    state.detailComposer.files.splice(index, 1);
+    renderDetail();
+    return;
+  }
+  if (e.target.closest('.detail-node-del')) {
+    const id = Number(e.target.closest('.detail-node-del').dataset.id);
+    if (!confirm('确定将该节点及其附件移入回收站吗？')) return;
+    await api('DELETE', `/api/nodes/${id}`);
+    state.expandedNodes.delete(id);
+    await refresh();
+    toast('节点已移入回收站');
+    return;
+  }
+  const item = e.target.closest('.attach-item');
+  if (item) {
+    const id = Number(item.dataset.id);
+    const found = findAttachment(id);
+    if (!found) return;
+    if (e.target.closest('.attach-preview')) {
+      openPreview(found.att);
+      return;
+    }
+    if (e.target.closest('.attach-rename')) {
+      await renameAttachment(id);
+      return;
+    }
+    if (e.target.closest('.attach-del')) {
+      if (!confirm('确定将该附件移入回收站吗？')) return;
+      await api('DELETE', `/api/attachments/${id}`);
+      found.node.attachments = found.node.attachments.filter(
+        (a) => a.id !== id,
+      );
+      renderDetail();
+      renderBoard();
+      toast('附件已移入回收站');
+    }
+    return;
+  }
+  const head = e.target.closest('.acc-head');
+  if (head) {
+    const id = Number(head.dataset.id);
+    if (state.expandedNodes.has(id)) state.expandedNodes.delete(id);
+    else state.expandedNodes.add(id);
+    renderDetail();
+  }
+});
+
+el.detailBody.addEventListener('input', (e) => {
+  if (e.target.classList.contains('detail-composer-title')) {
+    state.detailComposer.title = e.target.value;
+    return;
+  }
+  if (e.target.classList.contains('detail-composer-content')) {
+    state.detailComposer.content = e.target.value;
+    return;
+  }
+  const id = Number(e.target.dataset.id);
+  if (e.target.classList.contains('detail-node-title')) {
+    const node = findNode(id)?.node;
+    if (!node) return;
+    node.title = e.target.value;
+    const head = el.detailBody.querySelector(
+      `.acc-head[data-id="${id}"] .acc-title`,
+    );
+    if (head) head.textContent = e.target.value || '未命名节点';
+    scheduleDetailSave(id);
+    return;
+  }
+  if (e.target.classList.contains('detail-node-content')) {
+    const node = findNode(id)?.node;
+    if (!node) return;
+    node.content = e.target.value;
+    scheduleDetailSave(id);
+  }
+});
+
+el.detailBody.addEventListener('change', (e) => {
+  const composerFile = e.target.closest('.detail-composer-file');
+  if (composerFile && state.detailComposer) {
+    for (const file of composerFile.files) {
+      state.detailComposer.files.push(file);
+    }
+    composerFile.value = '';
+    renderDetail();
+    return;
+  }
+  const fileInput = e.target.closest('.detail-file-input');
+  if (fileInput) {
+    const id = Number(fileInput.dataset.id);
+    detailUploadFiles(id, [...fileInput.files]);
+    fileInput.value = '';
+  }
+});
 
 /* -------------------------------- init -------------------------------- */
 
