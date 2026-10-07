@@ -1,6 +1,6 @@
 {
   "name": "task-board",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "个人任务管理面板：多任务并行卡片 + 任务节点 + 附件",
   "main": "server.js",

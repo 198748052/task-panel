@@ -56,6 +56,7 @@ class AppContainer(context: Context) {
         AppDatabase::class.java,
         "task-board.db",
     )
+        .addMigrations(AppDatabase.MIGRATION_1_2)
         .fallbackToDestructiveMigration()
         .build()
 
@@ -66,7 +67,7 @@ class AppContainer(context: Context) {
     val sessionRepository: SessionRepository = SessionRepository(database, apiHolder, tokenStore)
 
     val taskRepository: TaskRepository =
-        TaskRepository(database, apiHolder, tokenStore, json, syncer)
+        TaskRepository(database, apiHolder, tokenStore, json, syncer, syncScheduler)
 
     val attachmentRepository: AttachmentRepository =
         AttachmentRepository(appContext, database, apiHolder, tokenStore)

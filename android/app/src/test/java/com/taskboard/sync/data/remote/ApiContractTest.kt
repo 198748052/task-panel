@@ -109,4 +109,36 @@ class ApiContractTest {
             assertEquals(ApiErrorKind.NETWORK, e.kind)
         }
     }
+
+    @Test
+    fun downloadFollowsRedirectToOtherHostWithoutLeakingToken() = runBlocking {
+        val cdn = MockWebServer()
+        cdn.start()
+        try {
+            cdn.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/octet-stream")
+                    .setBody("r2-file-content"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", cdn.url("/bucket/object.bin")),
+            )
+
+            val body = api { "secret-token" }.downloadAttachment(7L)
+            assertEquals("r2-file-content", body.string())
+
+            val initial = server.takeRequest()
+            assertEquals("/api/attachments/7", initial.path)
+            assertEquals("Bearer secret-token", initial.getHeader("Authorization"))
+
+            val redirected = cdn.takeRequest()
+            assertEquals("/bucket/object.bin", redirected.path)
+            assertTrue(redirected.getHeader("Authorization") == null)
+        } finally {
+            cdn.shutdown()
+        }
+    }
 }

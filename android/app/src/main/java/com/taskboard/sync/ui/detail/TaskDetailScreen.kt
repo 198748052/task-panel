@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -61,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.taskboard.sync.data.local.NodeWithAttachments
 import com.taskboard.sync.data.local.TaskWithNodes
 import com.taskboard.sync.data.local.entity.AttachmentEntity
 import com.taskboard.sync.data.local.entity.NodeEntity
@@ -72,6 +72,7 @@ import com.taskboard.sync.data.repository.TaskRepository
 import com.taskboard.sync.data.sync.SyncScheduler
 import com.taskboard.sync.di.AppContainer
 import com.taskboard.sync.util.FileUtil
+import com.taskboard.sync.util.TimeFormat
 import kotlinx.coroutines.launch
 
 class TaskDetailViewModel(
@@ -396,6 +397,12 @@ fun TaskDetailScreen(
                     CircularProgressIndicator()
                 }
             } else {
+                val sortedNodes = remember(currentTask.nodes) {
+                    currentTask.nodes.sortedWith(
+                        compareByDescending<NodeWithAttachments> { it.node.createdAt ?: "" }
+                            .thenByDescending { it.node.sortOrder },
+                    )
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -425,7 +432,7 @@ fun TaskDetailScreen(
                             }
                         }
                     }
-                    items(currentTask.nodes, key = { it.node.localId }) { nodeWithAttachments ->
+                    items(sortedNodes, key = { it.node.localId }) { nodeWithAttachments ->
                         val node = nodeWithAttachments.node
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -433,10 +440,6 @@ fun TaskDetailScreen(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(
-                                        checked = node.done,
-                                        onCheckedChange = { vm.updateNode(node.localId, done = it) },
-                                    )
                                     Text(
                                         text = node.title,
                                         style = MaterialTheme.typography.titleSmall,
@@ -459,6 +462,22 @@ fun TaskDetailScreen(
                                     Text(
                                         text = node.content,
                                         style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                val timeMeta = listOfNotNull(
+                                    TimeFormat.dateTime(node.createdAt)
+                                        .takeIf { it.isNotBlank() }
+                                        ?.let { "创建 $it" },
+                                    TimeFormat.dateTime(node.updatedAt)
+                                        .takeIf { it.isNotBlank() }
+                                        ?.let { "编辑 $it" },
+                                ).joinToString("  ·  ")
+                                if (timeMeta.isNotBlank()) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = timeMeta,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }

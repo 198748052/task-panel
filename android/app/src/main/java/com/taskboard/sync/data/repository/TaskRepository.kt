@@ -20,6 +20,7 @@ import com.taskboard.sync.data.sync.CreateTaskPayload
 import com.taskboard.sync.data.sync.DeletePayload
 import com.taskboard.sync.data.sync.PendingChangeSyncer
 import com.taskboard.sync.data.sync.ReorderPayload
+import com.taskboard.sync.data.sync.SyncScheduler
 import com.taskboard.sync.data.sync.UpdateNodePayload
 import com.taskboard.sync.data.sync.UpdateTaskPayload
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,7 @@ class TaskRepository(
     private val tokenStore: TokenStore,
     private val json: Json,
     private val syncer: PendingChangeSyncer,
+    private val syncScheduler: SyncScheduler,
 ) {
     private val taskDao = db.taskDao()
     private val nodeDao = db.nodeDao()
@@ -177,7 +179,7 @@ class TaskRepository(
         if (trimmed.isEmpty()) throw ApiException(ApiErrorKind.UNKNOWN, "节点名称不能为空")
         if (taskDao.getByLocalId(taskLocalId) == null) return
         val localId = UUID.randomUUID().toString()
-        val order = nodeDao.maxSortOrder(taskLocalId) + 1.0
+        val order = nodeDao.minSortOrder(taskLocalId) - 1.0
         db.withTransaction {
             nodeDao.upsert(
                 NodeEntity(
@@ -217,6 +219,7 @@ class TaskRepository(
             title = title?.trim() ?: current.title,
             content = content ?: current.content,
             done = done ?: current.done,
+            updatedAt = nowIso(),
             dirty = true,
         )
         db.withTransaction {
@@ -408,11 +411,7 @@ class TaskRepository(
         }
     }
 
-    private suspend fun triggerSync() {
-        try {
-            syncer.flush()
-        } catch (e: ApiException) {
-            if (e.kind == ApiErrorKind.UNAUTHORIZED) throw e
-        }
+    private fun triggerSync() {
+        syncScheduler.enqueue()
     }
 }

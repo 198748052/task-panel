@@ -16,7 +16,10 @@ object PendingChangeType {
     const val REORDER_NODES = "REORDER_NODES"
 }
 
-@Entity(tableName = "tasks")
+@Entity(
+    tableName = "tasks",
+    indices = [Index("remoteId")],
+)
 data class TaskEntity(
     @PrimaryKey val localId: String,
     val remoteId: Long? = null,

@@ -67,6 +67,9 @@ interface NodeDao {
     @Query("SELECT COALESCE(MAX(sortOrder), 0.0) FROM nodes WHERE taskLocalId = :taskLocalId")
     suspend fun maxSortOrder(taskLocalId: String): Double
 
+    @Query("SELECT COALESCE(MIN(sortOrder), 0.0) FROM nodes WHERE taskLocalId = :taskLocalId")
+    suspend fun minSortOrder(taskLocalId: String): Double
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(node: NodeEntity)
 
