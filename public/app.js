@@ -283,6 +283,7 @@ function selectedStorage() {
 }
 
 async function boot() {
+  resetNav();
   try {
     const session = await api('GET', '/api/session');
     state.authEnabled = session.authEnabled;
@@ -323,6 +324,7 @@ el.loginForm.addEventListener('submit', async (e) => {
 el.logoutBtn.addEventListener('click', async () => {
   await api('POST', '/api/logout');
   state.tasks = [];
+  resetNav();
   showLogin();
 });
 
@@ -785,12 +787,85 @@ el.board.addEventListener('dragstart', hideNodeTooltip);
 window.addEventListener('scroll', hideNodeTooltip, true);
 window.addEventListener('resize', hideNodeTooltip);
 
+/* ---------------------------- navigation ------------------------------ */
+
+let navSeq = 0;
+const navStack = [];
+
+function pushNav(ui, extra) {
+  const entry = { ui, seq: ++navSeq, ...extra };
+  navStack.push(entry);
+  history.pushState(entry, '');
+  return entry;
+}
+
+function replaceNav(ui, extra) {
+  const entry = { ui, seq: ++navSeq, ...extra };
+  if (navStack.length) navStack[navStack.length - 1] = entry;
+  else navStack.push(entry);
+  history.replaceState(entry, '');
+  return entry;
+}
+
+function resetNav() {
+  navStack.length = 0;
+  navSeq = 0;
+  history.replaceState({ ui: 'base', seq: 0 }, '');
+}
+
+function goBack() {
+  if (!history.state || history.state.ui === 'base') return;
+  history.back();
+}
+
+function applyNavState(target) {
+  const st = target && target.ui ? target : { ui: 'base' };
+
+  const wantDrawer = st.ui === 'drawer' ? Number(st.nodeId) : null;
+  if (state.openNodeId && state.openNodeId !== wantDrawer) {
+    closeDrawerInternal();
+  }
+  if (wantDrawer != null && state.openNodeId !== wantDrawer) {
+    openDrawerInternal(wantDrawer);
+  }
+
+  const wantTaskId =
+    st.ui === 'detail' || st.ui === 'node' || st.ui === 'detail-composer'
+      ? Number(st.taskId)
+      : null;
+  if (wantTaskId == null) {
+    if (state.detailTaskId) closeDetailInternal();
+    return;
+  }
+  if (state.detailTaskId !== wantTaskId && !openDetailInternal(wantTaskId)) {
+    return;
+  }
+  state.expandedNodes = new Set(
+    Array.isArray(st.expanded) ? st.expanded.map(Number) : [],
+  );
+  state.detailComposer =
+    st.ui === 'detail-composer' ? { title: '', content: '', files: [] } : null;
+  renderDetail();
+}
+
+window.addEventListener('popstate', (e) => {
+  const st = e.state;
+  if (!st || !st.ui || st.ui === 'base') {
+    navStack.length = 0;
+  } else {
+    const idx = navStack.findIndex((x) => x.seq === st.seq);
+    if (idx >= 0) navStack.length = idx + 1;
+    else navStack.push(st);
+  }
+  applyNavState(st);
+});
+
 /* ------------------------------- drawer ------------------------------- */
 
-function openDrawer(nodeId) {
+function openDrawerInternal(nodeId) {
   const found = findNode(nodeId);
-  if (!found) return;
-  state.openNodeId = nodeId;
+  if (!found) return false;
+  state.openNodeId = Number(nodeId);
   el.nodeTitle.value = found.node.title;
   el.nodeContent.value = found.node.content || '';
   el.saveHint.textContent = '';
@@ -799,13 +874,27 @@ function openDrawer(nodeId) {
   el.drawer.classList.remove('hidden');
   el.drawer.setAttribute('aria-hidden', 'false');
   setTimeout(() => el.nodeContent.focus(), 60);
+  return true;
 }
 
-function closeDrawer() {
+function closeDrawerInternal() {
   state.openNodeId = null;
   el.drawerBackdrop.classList.add('hidden');
   el.drawer.classList.add('hidden');
   el.drawer.setAttribute('aria-hidden', 'true');
+}
+
+function openDrawer(nodeId) {
+  const id = Number(nodeId);
+  if (!findNode(id) || state.openNodeId === id) return;
+  if (state.openNodeId) replaceNav('drawer', { nodeId: id });
+  else pushNav('drawer', { nodeId: id });
+  openDrawerInternal(id);
+}
+
+function closeDrawer() {
+  if (!state.openNodeId) return;
+  goBack();
 }
 
 el.drawerClose.addEventListener('click', closeDrawer);
@@ -1851,23 +1940,37 @@ function detailTask() {
   return state.detailTaskId ? findTask(state.detailTaskId) : null;
 }
 
-function openDetail(taskId) {
+function openDetailInternal(taskId) {
   const task = findTask(taskId);
-  if (!task) return;
-  state.detailTaskId = taskId;
+  if (!task) return false;
+  state.detailTaskId = Number(taskId);
   state.detailComposer = null;
   state.expandedNodes = new Set();
   el.detailView.classList.remove('hidden');
   el.detailView.setAttribute('aria-hidden', 'false');
   renderDetail();
+  return true;
 }
 
-function closeDetail() {
+function closeDetailInternal() {
   state.detailTaskId = null;
   state.detailComposer = null;
   state.expandedNodes = new Set();
   el.detailView.classList.add('hidden');
   el.detailView.setAttribute('aria-hidden', 'true');
+}
+
+function openDetail(taskId) {
+  const id = Number(taskId);
+  if (!findTask(id) || state.detailTaskId === id) return;
+  if (state.detailTaskId) replaceNav('detail', { taskId: id, expanded: [] });
+  else pushNav('detail', { taskId: id, expanded: [] });
+  openDetailInternal(id);
+}
+
+function closeDetail() {
+  if (!state.detailTaskId) return;
+  goBack();
 }
 
 function renderDetail() {
@@ -2011,6 +2114,11 @@ function detailComposerHtml() {
 }
 
 function openDetailComposer() {
+  if (!state.detailTaskId) return;
+  pushNav('detail-composer', {
+    taskId: state.detailTaskId,
+    expanded: [...state.expandedNodes],
+  });
   state.detailComposer = { title: '', content: '', files: [] };
   renderDetail();
   const input = el.detailBody.querySelector('.detail-composer-title');
@@ -2065,6 +2173,10 @@ async function saveDetailComposer() {
     }
     state.detailComposer = null;
     state.expandedNodes.add(res.node.id);
+    replaceNav('node', {
+      taskId: state.detailTaskId,
+      expanded: [...state.expandedNodes],
+    });
     await refresh();
     toast('节点已创建');
   } catch (err) {
@@ -2160,8 +2272,12 @@ el.detailAddNode.addEventListener('click', openDetailComposer);
 
 el.detailBody.addEventListener('click', async (e) => {
   if (e.target.closest('.detail-composer-cancel')) {
-    state.detailComposer = null;
-    renderDetail();
+    if (history.state && history.state.ui === 'detail-composer') {
+      goBack();
+    } else {
+      state.detailComposer = null;
+      renderDetail();
+    }
     return;
   }
   if (e.target.closest('.detail-composer-save')) {
@@ -2181,6 +2297,17 @@ el.detailBody.addEventListener('click', async (e) => {
     if (!confirm('确定将该节点及其附件移入回收站吗？')) return;
     await api('DELETE', `/api/nodes/${id}`);
     state.expandedNodes.delete(id);
+    const top = navStack[navStack.length - 1];
+    if (
+      top &&
+      (top.ui === 'node' || top.ui === 'detail-composer') &&
+      Number(top.taskId) === state.detailTaskId
+    ) {
+      replaceNav('node', {
+        taskId: state.detailTaskId,
+        expanded: [...state.expandedNodes],
+      });
+    }
     await refresh();
     toast('节点已移入回收站');
     return;
@@ -2213,9 +2340,33 @@ el.detailBody.addEventListener('click', async (e) => {
   const head = e.target.closest('.acc-head');
   if (head) {
     const id = Number(head.dataset.id);
-    if (state.expandedNodes.has(id)) state.expandedNodes.delete(id);
-    else state.expandedNodes.add(id);
+    const expanded = new Set(state.expandedNodes);
+    const opening = !expanded.has(id);
+    if (opening) expanded.add(id);
+    else expanded.delete(id);
+    const next = [...expanded];
+    const top = navStack[navStack.length - 1];
+    const topExpanded = top && Array.isArray(top.expanded) ? top.expanded : [];
+    const closesLast =
+      !opening &&
+      top &&
+      top.ui === 'node' &&
+      Number(top.taskId) === state.detailTaskId &&
+      topExpanded[topExpanded.length - 1] === id;
+
+    state.expandedNodes = expanded;
+    state.detailComposer = null;
     renderDetail();
+
+    if (state.detailTaskId) {
+      if (opening) {
+        pushNav('node', { taskId: state.detailTaskId, expanded: next });
+      } else if (closesLast) {
+        goBack();
+      } else {
+        replaceNav('node', { taskId: state.detailTaskId, expanded: next });
+      }
+    }
   }
 });
 
