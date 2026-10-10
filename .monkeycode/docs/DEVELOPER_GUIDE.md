@@ -2,7 +2,7 @@
 
 ## 项目目的
 
-task-panel 是自托管个人任务看板。仓库同时包含 Express 后端 + 静态 Web，以及 Kotlin Android 客户端。
+task-panel 是自托管个人任务看板。仓库包含 Express 后端与无构建的静态 Web 前端。
 
 **核心职责**:
 - 单账号鉴权下的任务 / 节点 / 附件 CRUD
@@ -10,12 +10,10 @@ task-panel 是自托管个人任务看板。仓库同时包含 Express 后端 + 
 - 可选 Cloudflare R2 附件
 - Git 一键更新当前部署目录
 - 全量 ZIP 导出
-- Android 离线编辑任务与节点，在线同步
 
 **相关系统**:
 - Cloudflare R2 — 可选对象存储，S3 API
 - Git origin — `src/updater.js` 拉取更新
-- Android 客户端 — 消费同一套 `/api`
 
 ## 环境搭建
 
@@ -24,7 +22,6 @@ task-panel 是自托管个人任务看板。仓库同时包含 Express 后端 + 
 - Node.js >= 22.5.0（`node:sqlite`、`process.loadEnvFile`）
 - npm
 - 可选：本机 `git`（一键更新）、Cloudflare R2 凭证
-- Android：JDK 17、Android SDK 34、Gradle Wrapper 8.7（见 `android/README.md`）
 
 ### 安装
 
@@ -71,21 +68,11 @@ npm run dev
 # 生产
 npm start
 
-# 后端测试
+# 测试
 npm test
 ```
 
 默认监听 `http://0.0.0.0:3000`。首次启动会在控制台打印默认账号。
-
-Android：
-
-```bash
-cd android
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
-```
-
-需在 `android/local.properties` 写 `sdk.dir=`（该文件已被 gitignore）。
 
 ## 开发工作流
 
@@ -94,20 +81,18 @@ cd android
 | 工具 | 命令 | 目的 |
 |------|------|------|
 | Node test runner | `npm test` | `test/*.test.js` |
-| Android unit tests | `./gradlew :app:testDebugUnitTest` | JVM 单测 |
 
 仓库未配置 ESLint / Prettier / TypeScript。
 
 ### 提交前检查
 
 1. `npm test`
-2. 若改 Android：`cd android && ./gradlew :app:testDebugUnitTest`
 
-当前 `main` 与 `origin/main` 同步。近期提交示例：`557feef perf(android): 后台同步优化、R8 压缩与节点展示调整`。
+当前 `main` 与 `origin/main` 同步。近期提交示例：`4982846 docs: 生成 task-panel 项目 Wiki 文档`。
 
 ### 分支策略
 
-远程仅见 `main`。功能规格在 `.monkeycode/specs/`（例如 `2026-10-06-android-sync-client`、`2026-10-05-export-all-content`）。
+远程仅见 `main`。功能规格在 `.monkeycode/specs/`（例如 `2026-10-05-export-all-content`）。
 
 ## 常见任务
 
@@ -118,20 +103,16 @@ cd android
 2. `src/store.js` 或对应模块 — 业务
 3. `test/*.test.js` — 可单测的纯函数
 4. `public/app.js` — Web 调用
-5. 若移动端需要：`TaskBoardApi.kt` + DTO + Repository
 
 **步骤**:
 1. 在 `server.js` 按现有分组（auth / tasks / nodes / attachments / trash）添加路由
 2. JSON 错误体保持 `{ error, message? }`
-3. Android 同步接口优先考虑是否应并入 `GET /api/sync`
 
 ### 添加数据库列
 
 **需修改的文件**: `src/db.js`
 
 用 `ensureColumn(table, column, definition)` 做兼容迁移（已用于 `deleted_at`、`delete_batch`、`storage`）。不要改已存在库上的 CREATE TABLE 语句来「修复」旧库，靠 `ensureColumn`。
-
-Android Room 实体在 `Entities.kt`，变更需同步 schema / 迁移策略（当前 `AppDatabase.kt`）。
 
 ### 添加环境变量
 
@@ -147,7 +128,7 @@ Android Room 实体在 `Entities.kt`，变更需同步 schema / 迁移策略（�
 
 ### 导出格式变更
 
-`src/export.js` 中 `SCHEMA_VERSION` 当前为 `1`。改 ZIP 结构时同步 `test/export.test.js` 与 Android `ExportRepository`。
+`src/export.js` 中 `SCHEMA_VERSION` 当前为 `1`。改 ZIP 结构时同步 `test/export.test.js`。
 
 ## 编码规范
 
@@ -155,7 +136,6 @@ Android Room 实体在 `Entities.kt`，变更需同步 schema / 迁移策略（�
 
 - 后端：`server.js` 只做 HTTP；领域在 `src/*.js`，CommonJS `module.exports`
 - 前端：单文件 `public/app.js`，DOM 引用集中在 `el`
-- Android：`data/` / `ui/` / `di/` 分层，手写 `AppContainer`
 
 ### 命名
 
@@ -165,8 +145,6 @@ Android Room 实体在 `Entities.kt`，变更需同步 schema / 迁移策略（�
 | 函数 | camelCase | `listTasks`、`extractToken` |
 | SQL 列 | snake_case | `sort_order`、`deleted_at` |
 | HTTP error | snake_case 字符串 | `bad_credentials` |
-| Android 类 | PascalCase | `PendingChangeSyncer` |
-| Room 字段 | camelCase | `localId`、`remoteId` |
 
 ### 错误处理
 
@@ -181,11 +159,9 @@ Multer 错误由 `server.js` 末尾统一中间件处理。
 - 登录失败计数按 IP，5 次锁 5 分钟
 - `app.disable('x-powered-by')`
 - 附件响应 `X-Content-Type-Options: nosniff`
-- Android TokenStore 优先 EncryptedSharedPreferences
 - 文档与示例中不要写入真实 R2 密钥；设置接口也不回传 `secretAccessKey`
 
 ### 测试
 
 - 后端：`test/<name>.test.js`，`node:test` + `node:assert/strict`
 - 鉴权测试自建临时 `DATA_DIR`
-- Android：`*Test.kt` 位于 `android/app/src/test/java/`

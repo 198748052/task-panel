@@ -4,31 +4,27 @@
 
 task-panel（npm 包名 `task-board`，版本 1.0.1）是一套自托管的个人任务管理面板。用户以单账号登录后，用卡片看板管理并行任务；每个任务包含若干节点，节点可附带正文、完成状态与附件。系统把任务树、回收站、账号与设置持久化到本机 SQLite，附件可落在本地磁盘或 Cloudflare R2。
 
-目标用户是需要自己部署、自己保管数据的个人或小团队。Web 端（`public/`）是主界面，覆盖看板、节点抽屉、任务详情、回收站、设置、一键更新与全量导出。Android 客户端（`android/`，包名 `com.taskboard.sync`，versionName 1.0.2）连接同一套 `/api`：任务与节点支持离线编辑，附件上传、回收站与导出走在线接口。
+目标用户是需要自己部署、自己保管数据的个人或小团队。Web 端（`public/`）是主界面，覆盖看板、节点抽屉、任务详情、回收站、设置、一键更新与全量导出。
 
-效果上，一次部署即可同时服务浏览器与手机：浏览器走 httpOnly Cookie，移动端走同一枚 HMAC 签名令牌（`Authorization: Bearer`）。删除走软删除 + `delete_batch` 分组，默认保留 30 天后由小时级定时器彻底清除。导出产出一份 ZIP（`data.json`、`manifest.json`、每任务 Markdown、本地附件文件）。
+浏览器通过 httpOnly Cookie 维护会话，接口同时接受 `Authorization: Bearer` 令牌，便于脚本或第三方集成。删除走软删除 + `delete_batch` 分组，默认保留 30 天后由小时级定时器彻底清除。导出产出一份 ZIP（`data.json`、`manifest.json`、每任务 Markdown、本地附件文件）。
 
 ## 技术栈
 
 **语言与运行时**
 - Node.js >= 22.5.0（使用 `node:sqlite` 的 `DatabaseSync`、`process.loadEnvFile`）
-- Kotlin（Android，JVM 17）
 - 原生 HTML / CSS / JavaScript（Web 前端无打包器）
 
 **框架**
 - Express 4.21.2
 - cookie-parser、multer
-- Android：Jetpack Compose + Material 3 + Navigation Compose、Room、Retrofit、OkHttp、WorkManager、KSP
 
 **数据存储**
 - SQLite（`data/app.db`，WAL + foreign_keys）
 - 本地附件目录 `data/uploads/`
 - Cloudflare R2（S3 兼容，`@aws-sdk/client-s3`）
-- Android Room 本地库（任务/节点/附件/pending_changes/sync_meta）
 
 **测试**
 - 后端：`node --test`（`test/auth.test.js`、`test/export.test.js`、`test/updater.test.js`）
-- Android：JUnit（`android/app/src/test/`）
 
 **外部服务**
 - Cloudflare R2 对象存储（可选）
@@ -55,22 +51,12 @@ task-panel/
 │   ├── app.js                # 前端状态与 API 调用
 │   └── styles.css
 ├── test/                     # Node 测试
-├── android/                  # Kotlin 原生客户端
-│   └── app/src/main/java/com/taskboard/sync/
-│       ├── data/remote/      # Retrofit、DTO、Bearer 拦截器
-│       ├── data/local/       # Room
-│       ├── data/repository/  # 仓储
-│       ├── data/sync/        # 离线队列与 WorkManager
-│       ├── di/               # AppContainer
-│       └── ui/               # Compose 页面
 └── data/                     # 运行时数据（gitignore）：app.db、uploads/
 ```
 
 **入口点**
 - `server.js` - HTTP 服务启动、全部 `/api` 路由、静态资源与 SPA fallback
 - `public/app.js` - Web 客户端
-- `android/app/src/main/java/com/taskboard/sync/TaskBoardApp.kt` - Android Application
-- `android/app/src/main/java/com/taskboard/sync/MainActivity.kt` - Compose 入口
 
 ## 子系统
 
@@ -79,7 +65,7 @@ task-panel/
 **位置**: `server.js`
 **关键文件**: `server.js`
 **依赖**: `src/store`、`src/auth`、`src/storage`、`src/updater`、`src/export`、`src/db`
-**被依赖**: `public/app.js`、Android `TaskBoardApi`
+**被依赖**: `public/app.js`
 
 ### 领域存储
 **目的**: 任务树 CRUD、软删除批次、回收站恢复/清空、导出快照。
@@ -123,20 +109,12 @@ task-panel/
 **依赖**: `/api`（`credentials: 'same-origin'`）
 **被依赖**: Express `express.static`
 
-### Android 同步客户端
-**目的**: 以 Room 为 SSOT 做任务/节点离线编辑，WorkManager FIFO 提交 pending_changes；附件、回收站、导出在线。
-**位置**: `android/`
-**关键文件**: `TaskBoardApi.kt`、`PendingChangeSyncer.kt`、`AppContainer.kt`、`AppNav.kt`
-**依赖**: 后端 `/api`
-**被依赖**: 无（独立 APK）
-
 ## 图表
 
 ```mermaid
 flowchart LR
     subgraph Clients
         Web["public/app.js"]
-        Android["Android Compose"]
     end
 
     subgraph API["server.js"]
@@ -162,7 +140,6 @@ flowchart LR
 
     Web --> Routes
     Web --> Static
-    Android --> Routes
     Routes --> AuthMW
     AuthMW --> Store
     AuthMW --> AuthMod
@@ -195,24 +172,4 @@ sequenceDiagram
     Store->>DB: SELECT tasks/nodes/attachments
     Store-->>API: nested snapshot
     API-->>Client: JSON
-```
-
-```mermaid
-sequenceDiagram
-    participant UI as Compose UI
-    participant Repo as TaskRepository
-    participant Room as Room SSOT
-    participant WM as WorkManager
-    participant Syncer as PendingChangeSyncer
-    participant API as Backend /api
-
-    UI->>Repo: create/update/delete
-    Repo->>Room: write entity + pending_changes
-    WM->>Syncer: flush FIFO
-    Syncer->>API: POST/PATCH/DELETE
-    API-->>Syncer: remote id
-    Syncer->>Room: bindRemoteId 删除队列项
-    UI->>Repo: pull
-    Repo->>API: GET /api/sync
-    Repo->>Room: merge 保留 dirty 行
 ```

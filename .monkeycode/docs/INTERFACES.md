@@ -1,6 +1,6 @@
 # 接口文档
 
-task-panel 的公开契约是 `server.js` 中的 REST JSON API。Web 通过 Cookie `tb_session` 鉴权；Android 使用同一枚令牌，请求头 `Authorization: Bearer <token>`。`src/auth.extractToken` 优先 Cookie，再读 Bearer。
+task-panel 的公开契约是 `server.js` 中的 REST JSON API。Web 通过 Cookie `tb_session` 鉴权；也可改用请求头 `Authorization: Bearer <token>` 携带同一枚令牌。`src/auth.extractToken` 优先 Cookie，再读 Bearer。
 
 未登录访问受保护接口返回 `401 {"error":"unauthorized"}`。登录连续失败 5 次后该 IP 锁定 5 分钟，返回 `429 {"error":"too_many_attempts"}`。
 
@@ -11,7 +11,7 @@ task-panel 的公开契约是 `server.js` 中的 REST JSON API。Web 通过 Cook
 | 客户端 | 方式 |
 |--------|------|
 | Web | `Set-Cookie: tb_session=<token>; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000000` |
-| Android | 登录响应当中的 `token`，后续 `Authorization: Bearer <token>` |
+| API 客户端 | 登录响应中的 `token`，后续 `Authorization: Bearer <token>` |
 
 `GET /api/session` 与 `POST /api/login`、`POST /api/logout` 不要求已登录。其余 `/api/*` 均走 `requireAuth`。
 
@@ -64,11 +64,11 @@ task-panel 的公开契约是 `server.js` 中的 REST JSON API。Web 通过 Cook
 
 ---
 
-## 同步快照（移动端）
+## 同步快照
 
 ### GET /api/sync
 
-一次返回任务树、回收站与上传限制，减少 Android 往返。
+一次返回任务树、回收站与上传限制，减少往返请求。
 
 **响应**
 ```json
@@ -270,12 +270,6 @@ ZIP 内容（`src/export.js`）：
 - `attachments/<id>_<name>` — 仅 `storage === "local"` 且磁盘文件存在的附件；R2 附件在 JSON/Markdown 中保留 `url`
 
 ---
-
-## Android Retrofit 对照
-
-接口定义：`android/.../data/remote/TaskBoardApi.kt`。覆盖上表除 Web 专用的 settings/R2 配置与一键更新写入之外的读写端点。Android 使用 `GET /api/sync` 做全量拉取，不在客户端配置 R2。
-
-DTO 见 `android/.../data/remote/dto/Dtos.kt`。
 
 ## Web 前端调用约定
 

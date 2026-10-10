@@ -75,13 +75,6 @@
 **/.mypy_cache/
 **/.ruff_cache/
 
-# Java
-*.class
-*.jar
-*.war
-*.ear
-**/.gradle/
-
 # C/C++/Go/Rust
 *.o
 *.obj
@@ -123,39 +116,6 @@
 **/.cache/
 **/tmp/
 **/temp/
-
-# Dart
-**/.dart_tool/
-**/*.dart_tool
-**/analysis_options.yaml
-**/.packages
-**/.pub-cache/
-**/.pub/
-
-# Flutter
-**/flutter_export_environment.sh
-**/flutter_export_environment.bat
-**/.flutter-plugins
-**/.flutter-plugins-dependencies
-**/.flutter-plugins-dependencies.lock
-**/.metadata
-**/.flutter_build
-**/build/
-**/.dart_tool/
-**/ios/Pods/
-**/ios/.symlinks/
-**/ios/Flutter/ephemeral/
-**/ios/Podfile.lock
-**/ios/.generated/
-**/android/**/generated/
-**/android/.gradle/
-**/android/local.properties
-**/android/**/GeneratedPluginRegistrant.java
-**/android/**/flutter_*.json
-**/web/.dart_tool/
-**/web/build/
-**/.flutter-plugins
-**/.flutter-plugins-dependencies
 
 # Compressed files
 *.zip
